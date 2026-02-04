@@ -89,3 +89,4 @@
 ## Bug Fixes
 - [x] Fix login for existing OAuth users showing "Please use OAuth to sign in"
 - [x] Fix scraper stuck on "Waiting..." status - Fixed zip stream handling
+- [x] Fix orders failing with 0 SKUs processed - Added retry functionality for failed/stuck orders

@@ -16,7 +16,9 @@ import {
   Image,
   Package,
   Store,
+  RefreshCw,
 } from "lucide-react";
+import { toast } from "sonner";
 
 const statusConfig = {
   pending: { icon: Clock, color: "bg-yellow-500/20 text-yellow-500", label: "Pending" },
@@ -32,6 +34,16 @@ export default function OrderDetail() {
   const [, setLocation] = useLocation();
   const params = useParams<{ id: string }>();
   const orderId = parseInt(params.id || "0");
+
+  const retryMutation = trpc.orders.retry.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
 
   const { data, isLoading, refetch } = trpc.orders.get.useQuery(
     { orderId },
@@ -93,6 +105,16 @@ export default function OrderDetail() {
           <Button onClick={() => window.open(order.zipFileUrl!, "_blank")}>
             <Download className="h-4 w-4 mr-2" />
             Download ZIP
+          </Button>
+        )}
+        {(order.status === "failed" || order.status === "processing") && (
+          <Button
+            variant="outline"
+            onClick={() => retryMutation.mutate({ orderId: order.id })}
+            disabled={retryMutation.isPending}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+            {retryMutation.isPending ? "Retrying..." : "Retry"}
           </Button>
         )}
       </div>

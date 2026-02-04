@@ -430,6 +430,55 @@ export const appRouter = router({
             : `Processing ${skusToProcess.length} SKUs.`,
         };
       }),
+
+    // Retry a failed order
+    retry: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const order = await getOrderById(input.orderId);
+        if (!order || order.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+        }
+
+        if (order.status !== "failed" && order.status !== "processing") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only failed or stuck orders can be retried" });
+        }
+
+        // Get the order items that need to be processed
+        const items = await getOrderItems(input.orderId);
+        const pendingItems = items.filter((item) => item.status === "pending" || item.status === "processing");
+        const skusToProcess = pendingItems.map((item) => item.sku);
+
+        if (skusToProcess.length === 0) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "No SKUs to retry" });
+        }
+
+        // Reset order status
+        await updateOrder(input.orderId, {
+          status: "processing",
+          processedSkus: 0,
+        });
+
+        // Reset order items
+        for (const item of pendingItems) {
+          await updateOrderItem(item.id, {
+            status: "pending",
+            imagesFound: 0,
+            errorMessage: null,
+          });
+        }
+
+        // Start scraping in background
+        processScrapeJob(input.orderId, skusToProcess).catch((err) => {
+          console.error(`Retry scrape job ${input.orderId} failed:`, err);
+        });
+
+        return {
+          orderId: input.orderId,
+          skusToProcess: skusToProcess.length,
+          message: `Retrying ${skusToProcess.length} SKUs...`,
+        };
+      }),
   }),
 
   // Stores router
