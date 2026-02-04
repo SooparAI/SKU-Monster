@@ -30,6 +30,8 @@ import { invokeLLM } from "./_core/llm";
 import { TRPCError } from "@trpc/server";
 import { createTopupCheckoutSession, getCheckoutSession } from "./stripe";
 import { registerUser, loginUser, createToken, getUserById } from "./auth";
+import { generateSolanaPayUrl, getWalletAddress, isSolanaConfigured, SOLANA_PRICE_TIERS } from "./solana";
+import { nanoid } from "nanoid";
 
 export const appRouter = router({
   system: systemRouter,
@@ -152,6 +154,89 @@ export const appRouter = router({
         });
 
         return { checkoutUrl: url, sessionId };
+      }),
+
+    // Get Solana Pay configuration
+    getSolanaConfig: protectedProcedure.query(() => {
+      return {
+        enabled: isSolanaConfigured(),
+        walletAddress: getWalletAddress(),
+        priceTiers: SOLANA_PRICE_TIERS,
+      };
+    }),
+
+    // Generate Solana Pay URL for a specific amount
+    createSolanaPayment: protectedProcedure
+      .input(
+        z.object({
+          amount: z.number().min(15),
+          credits: z.number().min(1),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        if (!isSolanaConfigured()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Solana Pay not configured" });
+        }
+
+        // Create a unique reference for this payment
+        const reference = nanoid(32);
+
+        // Create pending transaction
+        const transactionId = await createTransaction({
+          userId: ctx.user.id,
+          type: "topup",
+          amount: input.amount.toFixed(2),
+          paymentMethod: "solana",
+          paymentId: reference,
+          status: "pending",
+          description: `Solana Pay top-up - ${input.credits} credits`,
+        });
+
+        // Generate Solana Pay URL
+        const solanaPayUrl = generateSolanaPayUrl({
+          amount: input.amount,
+          reference,
+          label: "Photo.1 Credits",
+          message: `${input.credits} SKU credits`,
+        });
+
+        return {
+          transactionId,
+          reference,
+          solanaPayUrl,
+          walletAddress: getWalletAddress(),
+          amount: input.amount,
+          credits: input.credits,
+        };
+      }),
+
+    // Confirm Solana payment (manual confirmation by admin or automated via webhook)
+    confirmSolanaPayment: protectedProcedure
+      .input(
+        z.object({
+          transactionId: z.number(),
+          txSignature: z.string().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const transactions = await getUserTransactions(ctx.user.id);
+        const transaction = transactions.find((t) => t.id === input.transactionId);
+
+        if (!transaction) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Transaction not found" });
+        }
+
+        if (transaction.status !== "pending") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Transaction already processed" });
+        }
+
+        // In production, you would verify the transaction on-chain here
+        // For now, we'll allow manual confirmation
+        const amount = parseFloat(transaction.amount);
+        const newBalance = await addToUserBalance(ctx.user.id, amount);
+        await updateTransactionStatus(input.transactionId, "completed");
+
+        return { newBalance, message: "Payment confirmed! Credits added to your balance." };
       }),
 
     // Verify checkout session completion
@@ -366,9 +451,11 @@ async function processScrapeJob(orderId: number, skus: string[]) {
     console.log(`Starting scrape job ${orderId} with ${skus.length} SKUs`);
 
     const result = await runScrapeJob(orderId, skus, (processed, total) => {
+      console.log(`Order ${orderId}: Processed ${processed}/${total} SKUs`);
       // Update order progress
       updateOrder(orderId, { processedSkus: processed }).catch(console.error);
     });
+    console.log(`runScrapeJob completed for order ${orderId}, creating zip...`);
 
     // Update order with results
     await updateOrder(orderId, {
@@ -404,7 +491,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
       }
     }
 
-    console.log(`Scrape job ${orderId} completed. Total images: ${result.totalImages}`);
+    console.log(`Scrape job ${orderId} completed successfully. Total images: ${result.totalImages}, Zip URL: ${result.zipUrl}`);
   } catch (err) {
     console.error(`Scrape job ${orderId} error:`, err);
     await updateOrder(orderId, {

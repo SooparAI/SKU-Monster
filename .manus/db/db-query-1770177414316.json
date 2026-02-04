@@ -1,0 +1,23 @@
+{
+  "query": "SELECT * FROM orders ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT * FROM orders ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "31",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 03:53:30",
+      "completedAt": "2026-02-04 03:53:31"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tchargedAmount\tzipFileUrl\tzipFileKey\tcreatedAt\tcompletedAt\n1\t31\tfailed\t1\t0\t15.00\t15.00\tNULL\tNULL\t2026-02-04 03:53:30\t2026-02-04 03:53:31\n",
+  "stderr": "",
+  "execution_time_ms": 94
+}

@@ -81,7 +81,7 @@ export const storeConfigs: StoreConfig[] = [
     },
     rateLimit: 2000,
     notes: "Major US retailer. Strong anti-bot protection - may require special handling.",
-    isActive: true,
+    isActive: false, // Disabled due to anti-bot protection
   },
   {
     name: "Amazon",
@@ -94,7 +94,7 @@ export const storeConfigs: StoreConfig[] = [
     },
     rateLimit: 2000,
     notes: "E-commerce marketplace. Strong anti-bot measures - may have limited success.",
-    isActive: true,
+    isActive: false, // Disabled due to anti-bot protection
   },
   {
     name: "Sephora",
@@ -107,7 +107,7 @@ export const storeConfigs: StoreConfig[] = [
     },
     rateLimit: 2000,
     notes: "Beauty retailer. May have anti-bot measures.",
-    isActive: true,
+    isActive: false, // Disabled due to anti-bot protection
   },
   {
     name: "Nordstrom",
@@ -120,7 +120,7 @@ export const storeConfigs: StoreConfig[] = [
     },
     rateLimit: 1000,
     notes: "Department store. Anti-bot protection may apply.",
-    isActive: true,
+    isActive: false, // Disabled due to anti-bot protection
   },
   {
     name: "Macy's",

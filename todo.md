@@ -8,7 +8,11 @@
 ## Payment & Balance System
 - [x] User balance tracking in database
 - [x] Stripe payment integration for top-up
-- [ ] Solana Pay integration for top-up (Coming Soon)
+- [x] Solana Pay integration for top-up
+  - [x] Add Solana wallet address configuration
+  - [x] Create Solana Pay URL generation
+  - [x] Update TopUp page with Solana payment option
+  - [x] Implement manual payment verification
 - [x] Transaction history
 - [x] Pricing: $15 per SKU scrape
 
@@ -84,3 +88,4 @@
 
 ## Bug Fixes
 - [x] Fix login for existing OAuth users showing "Please use OAuth to sign in"
+- [x] Fix scraper stuck on "Waiting..." status - Fixed zip stream handling

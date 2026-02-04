@@ -98,6 +98,98 @@ async function hasNoResults(page: Page, selector: string): Promise<boolean> {
   }
 }
 
+// Check if we're on a product page (redirected from search)
+async function isProductPage(page: Page): Promise<boolean> {
+  const url = page.url();
+  // Common product page URL patterns
+  const productPatterns = [
+    /\/product[s]?\//i,
+    /\/p\//i,
+    /\/item\//i,
+    /\/dp\//i,
+    /\.html$/i,
+    /\/[a-z-]+-perfume$/i,
+    /\/[a-z-]+-cologne$/i,
+  ];
+  return productPatterns.some(pattern => pattern.test(url));
+}
+
+// Extract all product images from page using multiple selectors
+async function extractAllProductImages(page: Page): Promise<string[]> {
+  const selectors = [
+    'img[src*="product"]',
+    'img[src*="fragrance"]',
+    'img[src*="perfume"]',
+    'img[data-src*="product"]',
+    '.product-image img',
+    '.gallery img',
+    '#main-product-image',
+    '.product-gallery img',
+    'img.primary-image',
+    'img[alt*="product"]',
+    '.pdp-image img',
+    'picture source',
+    'img[srcset]',
+  ];
+  
+  const allImages: string[] = [];
+  
+  for (const selector of selectors) {
+    try {
+      const images = await page.$$eval(selector, (elements) => {
+        return elements.map(el => {
+          if (el.tagName === 'SOURCE') {
+            return el.getAttribute('srcset')?.split(',')[0]?.trim().split(' ')[0] || '';
+          }
+          return el.getAttribute('src') || 
+                 el.getAttribute('data-src') || 
+                 el.getAttribute('data-lazy-src') ||
+                 el.getAttribute('srcset')?.split(',')[0]?.trim().split(' ')[0] || '';
+        }).filter(src => src && (src.startsWith('http') || src.startsWith('//')));
+      });
+      allImages.push(...images);
+    } catch {
+      // Selector not found, continue
+    }
+  }
+  
+  // Also try to get any large images on the page
+  try {
+    const largeImages = await page.$$eval('img', (imgs) => {
+      return imgs
+        .filter(img => {
+          const width = img.naturalWidth || img.width || 0;
+          const height = img.naturalHeight || img.height || 0;
+          return width > 200 || height > 200;
+        })
+        .map(img => img.src || img.getAttribute('data-src') || '')
+        .filter(src => src && (src.startsWith('http') || src.startsWith('//')));
+    });
+    allImages.push(...largeImages);
+  } catch {
+    // Continue
+  }
+  
+  // Deduplicate and filter
+  const uniqueImages = Array.from(new Set(allImages))
+    .map(url => url.startsWith('//') ? `https:${url}` : url)
+    .filter(url => {
+      // Filter out common non-product images
+      const lowerUrl = url.toLowerCase();
+      return !lowerUrl.includes('logo') &&
+             !lowerUrl.includes('icon') &&
+             !lowerUrl.includes('banner') &&
+             !lowerUrl.includes('sprite') &&
+             !lowerUrl.includes('placeholder') &&
+             !lowerUrl.includes('loading') &&
+             !lowerUrl.includes('pixel') &&
+             !lowerUrl.includes('tracking') &&
+             !lowerUrl.includes('1x1');
+    });
+  
+  return uniqueImages.slice(0, 20); // Limit to 20 images per page
+}
+
 // Scrape a single store for a SKU
 async function scrapeStore(
   page: Page,
@@ -110,40 +202,67 @@ async function scrapeStore(
   try {
     // Navigate to search page
     await page.goto(searchUrl, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
+      waitUntil: "domcontentloaded",
+      timeout: 20000,
     });
 
     // Wait for page to load
-    await delay(1000);
+    await delay(2000);
 
-    // Check for no results
-    if (await hasNoResults(page, store.selectors.noResults)) {
-      return results;
-    }
-
-    // Try to find product links
-    const productLinks = await page.$$eval(
-      store.selectors.productLink,
-      (links) =>
-        links
-          .map((a) => a.getAttribute("href"))
-          .filter((href): href is string => !!href)
-          .slice(0, 3) // Limit to first 3 products
-    );
-
-    if (productLinks.length === 0) {
-      // No product links found, try to extract images from search page directly
-      const images = await extractImageUrls(page, store.selectors.productImage);
+    // Check if we were redirected to a product page
+    const currentUrl = page.url();
+    const wasRedirected = currentUrl !== searchUrl && await isProductPage(page);
+    
+    if (wasRedirected) {
+      console.log(`  Redirected to product page: ${currentUrl}`);
+      // We're on a product page, extract images directly
+      const images = await extractAllProductImages(page);
       for (const imageUrl of images) {
         results.push({
           sku,
           storeName: store.name,
-          sourceUrl: searchUrl,
-          imageUrl: imageUrl.startsWith("//") ? `https:${imageUrl}` : imageUrl,
+          sourceUrl: currentUrl,
+          imageUrl,
+        });
+      }
+      return results;
+    }
+
+    // Check for no results
+    if (await hasNoResults(page, store.selectors.noResults)) {
+      console.log(`  No results found for SKU ${sku} on ${store.name}`);
+      return results;
+    }
+
+    // Try to find product links
+    let productLinks: string[] = [];
+    try {
+      productLinks = await page.$$eval(
+        store.selectors.productLink,
+        (links) =>
+          links
+            .map((a) => a.getAttribute("href"))
+            .filter((href): href is string => !!href)
+            .slice(0, 3) // Limit to first 3 products
+      );
+    } catch {
+      // Selector not found
+    }
+
+    if (productLinks.length === 0) {
+      // No product links found, try to extract images from current page
+      console.log(`  No product links found, extracting images from search page`);
+      const images = await extractAllProductImages(page);
+      for (const imageUrl of images) {
+        results.push({
+          sku,
+          storeName: store.name,
+          sourceUrl: currentUrl,
+          imageUrl,
         });
       }
     } else {
+      console.log(`  Found ${productLinks.length} product links`);
       // Visit each product page and extract images
       for (const link of productLinks) {
         const productUrl = link.startsWith("http")
@@ -152,23 +271,18 @@ async function scrapeStore(
 
         try {
           await page.goto(productUrl, {
-            waitUntil: "networkidle2",
-            timeout: 30000,
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
           });
           await delay(store.rateLimit);
 
-          const images = await extractImageUrls(
-            page,
-            store.selectors.productImage
-          );
+          const images = await extractAllProductImages(page);
           for (const imageUrl of images) {
             results.push({
               sku,
               storeName: store.name,
               sourceUrl: productUrl,
-              imageUrl: imageUrl.startsWith("//")
-                ? `https:${imageUrl}`
-                : imageUrl,
+              imageUrl,
             });
           }
         } catch (err) {
@@ -260,19 +374,27 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     }
 
     // Download and upload images to S3
+    console.log(`Found ${allImages.length} images for SKU ${sku}, starting upload...`);
     let imageIndex = 0;
+    let uploadedCount = 0;
     for (const image of allImages) {
-      const uploaded = await downloadAndUploadImage(
-        image.imageUrl,
-        sku,
-        image.storeName,
-        imageIndex++
-      );
-      if (uploaded) {
-        image.s3Key = uploaded.s3Key;
-        image.s3Url = uploaded.s3Url;
+      try {
+        const uploaded = await downloadAndUploadImage(
+          image.imageUrl,
+          sku,
+          image.storeName,
+          imageIndex++
+        );
+        if (uploaded) {
+          image.s3Key = uploaded.s3Key;
+          image.s3Url = uploaded.s3Url;
+          uploadedCount++;
+        }
+      } catch (err) {
+        console.error(`Failed to upload image ${imageIndex} for SKU ${sku}:`, err);
       }
     }
+    console.log(`Uploaded ${uploadedCount}/${allImages.length} images for SKU ${sku}`);
   } finally {
     await page.close();
   }
@@ -295,48 +417,69 @@ export async function createZipFromResults(
   results: SkuScrapeResult[],
   orderId: number
 ): Promise<{ zipKey: string; zipUrl: string }> {
-  const chunks: Buffer[] = [];
-  const writableStream = new Writable({
-    write(chunk, _encoding, callback) {
-      chunks.push(Buffer.from(chunk));
-      callback();
-    },
-  });
+  console.log(`Creating zip for order ${orderId} with ${results.length} SKU results`);
+  
+  return new Promise(async (resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const writableStream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(Buffer.from(chunk));
+        callback();
+      },
+      final(callback) {
+        callback();
+      }
+    });
 
-  const archive = archiver("zip", { zlib: { level: 9 } });
-  archive.pipe(writableStream);
+    const archive = archiver("zip", { zlib: { level: 5 } }); // Lower compression for speed
+    
+    archive.on('error', (err) => {
+      console.error(`Archive error: ${err}`);
+      reject(err);
+    });
 
-  // Add images to zip organized by SKU
-  for (const result of results) {
-    for (let i = 0; i < result.images.length; i++) {
-      const image = result.images[i];
-      if (image.s3Url) {
-        try {
-          const response = await fetch(image.s3Url);
-          if (response.ok) {
-            const buffer = Buffer.from(await response.arrayBuffer());
-            const ext = image.s3Url.split(".").pop() || "jpg";
-            const filename = `${result.sku}/${image.storeName}_${i + 1}.${ext}`;
-            archive.append(buffer, { name: filename });
+    writableStream.on('finish', async () => {
+      console.log(`Stream finished, uploading zip to S3...`);
+      try {
+        const zipBuffer = Buffer.concat(chunks);
+        const zipKey = `orders/${orderId}/Photo.1_Output_${nanoid(8)}.zip`;
+        const { url } = await storagePut(zipKey, zipBuffer, "application/zip");
+        console.log(`Zip uploaded to S3: ${url}`);
+        resolve({ zipKey, zipUrl: url });
+      } catch (err) {
+        console.error(`Failed to upload zip: ${err}`);
+        reject(err);
+      }
+    });
+
+    archive.pipe(writableStream);
+
+    // Add images to zip organized by SKU
+    let addedCount = 0;
+    for (const result of results) {
+      console.log(`Adding ${result.images.length} images for SKU ${result.sku} to zip`);
+      for (let i = 0; i < result.images.length; i++) {
+        const image = result.images[i];
+        if (image.s3Url) {
+          try {
+            const response = await fetch(image.s3Url);
+            if (response.ok) {
+              const buffer = Buffer.from(await response.arrayBuffer());
+              const ext = image.s3Url.split(".").pop()?.split("?")[0] || "jpg";
+              const filename = `${result.sku}/${image.storeName}_${i + 1}.${ext}`;
+              archive.append(buffer, { name: filename });
+              addedCount++;
+            }
+          } catch (err) {
+            console.error(`Failed to add image to zip: ${err}`);
           }
-        } catch (err) {
-          console.error(`Failed to add image to zip: ${err}`);
         }
       }
     }
-  }
+    console.log(`Added ${addedCount} images to zip, finalizing...`);
 
-  await archive.finalize();
-
-  // Wait for stream to finish
-  await new Promise<void>((resolve) => writableStream.on("finish", resolve));
-
-  const zipBuffer = Buffer.concat(chunks);
-  const zipKey = `orders/${orderId}/Photo.1_Output_${nanoid(8)}.zip`;
-
-  const { url } = await storagePut(zipKey, zipBuffer, "application/zip");
-
-  return { zipKey, zipUrl: url };
+    archive.finalize();
+  });
 }
 
 // Main scrape job function
@@ -370,7 +513,18 @@ export async function runScrapeJob(
     }
 
     // Create zip file
-    const { zipKey, zipUrl } = await createZipFromResults(results, orderId);
+    console.log(`Starting zip creation for order ${orderId}...`);
+    let zipKey = "";
+    let zipUrl = "";
+    try {
+      const zipResult = await createZipFromResults(results, orderId);
+      zipKey = zipResult.zipKey;
+      zipUrl = zipResult.zipUrl;
+      console.log(`Zip created successfully: ${zipUrl}`);
+    } catch (zipErr) {
+      console.error(`Failed to create zip for order ${orderId}:`, zipErr);
+      // Continue without zip - images are still in S3
+    }
 
     return {
       orderId,

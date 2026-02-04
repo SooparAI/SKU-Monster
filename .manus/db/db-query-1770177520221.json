@@ -1,0 +1,20 @@
+{
+  "query": "SELECT o.id, o.userId, u.email, o.status, o.totalSkus, o.processedSkus, o.zipFileUrl, o.createdAt FROM orders o JOIN users u ON o.userId = u.id ORDER BY o.id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT o.id, o.userId, u.email, o.status, o.totalSkus, o.processedSkus, o.zipFileUrl, o.createdAt FROM orders o JOIN users u ON o.userId = u.id ORDER BY o.id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "1",
+      "userId": "31",
+      "email": "soorya@juicevendor.com",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "zipFileUrl": "NULL",
+      "createdAt": "2026-02-04 03:53:30"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\temail\tstatus\ttotalSkus\tprocessedSkus\tzipFileUrl\tcreatedAt\n1\t31\tsoorya@juicevendor.com\tfailed\t1\t0\tNULL\t2026-02-04 03:53:30\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}
