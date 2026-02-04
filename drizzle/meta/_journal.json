@@ -1,5 +1,20 @@
 {
   "version": "7",
   "dialect": "mysql",
-  "entries": []
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1770171947112,
+      "tag": "0000_acoustic_multiple_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1770172034151,
+      "tag": "0001_bumpy_the_renegades",
+      "breakpoints": true
+    }
+  ]
 }
