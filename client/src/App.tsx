@@ -9,19 +9,30 @@ import Home from "./pages/Home";
 import TopUp from "./pages/TopUp";
 import Orders from "./pages/Orders";
 import OrderDetail from "./pages/OrderDetail";
+import Login from "./pages/Login";
+import Register from "./pages/Register";
 
 function Router() {
   return (
-    <DashboardLayout>
-      <Switch>
-        <Route path="/" component={Home} />
-        <Route path="/topup" component={TopUp} />
-        <Route path="/orders" component={Orders} />
-        <Route path="/orders/:id" component={OrderDetail} />
-        <Route path="/404" component={NotFound} />
-        <Route component={NotFound} />
-      </Switch>
-    </DashboardLayout>
+    <Switch>
+      {/* Public auth routes */}
+      <Route path="/login" component={Login} />
+      <Route path="/register" component={Register} />
+      
+      {/* Protected routes wrapped in DashboardLayout */}
+      <Route>
+        <DashboardLayout>
+          <Switch>
+            <Route path="/" component={Home} />
+            <Route path="/topup" component={TopUp} />
+            <Route path="/orders" component={Orders} />
+            <Route path="/orders/:id" component={OrderDetail} />
+            <Route path="/404" component={NotFound} />
+            <Route component={NotFound} />
+          </Switch>
+        </DashboardLayout>
+      </Route>
+    </Switch>
   );
 }
 

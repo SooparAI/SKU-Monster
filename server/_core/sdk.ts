@@ -274,11 +274,13 @@ class SDKServer {
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
+        // Email is required for new schema
+        const email = userInfo.email || `${userInfo.openId}@oauth.local`;
         await db.upsertUser({
           openId: userInfo.openId,
           name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          email: email,
+          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? "oauth",
           lastSignedIn: signedInAt,
         });
         user = await db.getUserByOpenId(userInfo.openId);
@@ -292,8 +294,10 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
+    // Update last signed in
     await db.upsertUser({
-      openId: user.openId,
+      openId: user.openId || undefined,
+      email: user.email,
       lastSignedIn: signedInAt,
     });
 

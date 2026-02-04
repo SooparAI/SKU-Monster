@@ -29,14 +29,73 @@ import { getActiveStores } from "./scrapers/storeConfigs";
 import { invokeLLM } from "./_core/llm";
 import { TRPCError } from "@trpc/server";
 import { createTopupCheckoutSession, getCheckoutSession } from "./stripe";
+import { registerUser, loginUser, createToken, getUserById } from "./auth";
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
+    
+    // Custom registration
+    register: publicProcedure
+      .input(
+        z.object({
+          email: z.string().email(),
+          password: z.string().min(8),
+          name: z.string().min(1),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const result = await registerUser(input);
+        if (!result.success) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: result.error });
+        }
+
+        // Auto-login after registration
+        const loginResult = await loginUser({
+          email: input.email,
+          password: input.password,
+        });
+
+        if (loginResult.success && loginResult.token) {
+          const cookieOptions = getSessionCookieOptions(ctx.req);
+          ctx.res.cookie("auth_token", loginResult.token, {
+            ...cookieOptions,
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+          });
+        }
+
+        return { success: true, userId: result.userId };
+      }),
+
+    // Custom login
+    login: publicProcedure
+      .input(
+        z.object({
+          email: z.string().email(),
+          password: z.string(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const result = await loginUser(input);
+        if (!result.success) {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: result.error });
+        }
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie("auth_token", result.token!, {
+          ...cookieOptions,
+          maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        });
+
+        return { success: true, user: result.user };
+      }),
+
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
+      // Clear both OAuth and custom auth cookies
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie("auth_token", { ...cookieOptions, maxAge: -1 });
       return {
         success: true,
       } as const;

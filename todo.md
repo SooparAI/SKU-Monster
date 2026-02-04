@@ -70,3 +70,13 @@
 - [x] SKU input page
 - [x] Order history page
 - [ ] Profile settings page (Future enhancement)
+
+
+## Custom Authentication (New Requirement)
+- [x] Custom email/password registration
+- [x] Custom email/password login
+- [x] Password hashing with bcrypt
+- [x] JWT session management
+- [x] Login page UI
+- [x] Register page UI
+- [x] Remove Manus OAuth dependency (kept as fallback)

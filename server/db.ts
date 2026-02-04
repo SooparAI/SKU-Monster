@@ -36,12 +36,8 @@ export async function getDb() {
   return _db;
 }
 
-// User functions
+// User functions - for OAuth users (legacy support)
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
   const db = await getDb();
   if (!db) {
     console.warn("[Database] Cannot upsert user: database not available");
@@ -49,42 +45,32 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
 
   try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
+    // For OAuth users, we need both openId and email
+    if (!user.email) {
+      throw new Error("User email is required for upsert");
     }
+
+    const values: InsertUser = {
+      email: user.email,
+      openId: user.openId || null,
+      name: user.name || null,
+      loginMethod: user.loginMethod || "oauth",
+      lastSignedIn: user.lastSignedIn || new Date(),
+    };
+
     if (user.role !== undefined) {
       values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
+    } else if (user.openId && user.openId === ENV.ownerOpenId) {
       values.role = "admin";
-      updateSet.role = "admin";
     }
 
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
+    const updateSet: Record<string, unknown> = {
+      name: values.name,
+      lastSignedIn: new Date(),
+    };
 
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
+    if (user.openId) {
+      updateSet.openId = user.openId;
     }
 
     await db.insert(users).values(values).onDuplicateKeyUpdate({

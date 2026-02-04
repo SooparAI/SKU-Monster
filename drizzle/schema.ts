@@ -6,12 +6,14 @@ import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json } f
  */
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+  openId: varchar("openId", { length: 64 }).unique(), // Optional for OAuth users
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }), // For custom auth
   name: text("name"),
-  email: varchar("email", { length: 320 }),
-  loginMethod: varchar("loginMethod", { length: 64 }),
+  loginMethod: varchar("loginMethod", { length: 64 }).default("email").notNull(),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
   balance: decimal("balance", { precision: 10, scale: 2 }).default("0.00").notNull(),
+  emailVerified: int("emailVerified").default(0).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),

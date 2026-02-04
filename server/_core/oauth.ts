@@ -28,11 +28,13 @@ export function registerOAuthRoutes(app: Express) {
         return;
       }
 
+      // Email is required for new schema
+      const email = userInfo.email || `${userInfo.openId}@oauth.local`;
       await db.upsertUser({
         openId: userInfo.openId,
         name: userInfo.name || null,
-        email: userInfo.email ?? null,
-        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+        email: email,
+        loginMethod: userInfo.loginMethod ?? userInfo.platform ?? "oauth",
         lastSignedIn: new Date(),
       });
 
