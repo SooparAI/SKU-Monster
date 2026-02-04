@@ -1,0 +1,101 @@
+{
+  "query": "SELECT * FROM orders ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT * FROM orders ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "30001",
+      "userId": "31",
+      "status": "failed",
+      "totalSkus": "2",
+      "processedSkus": "0",
+      "totalCost": "30.00",
+      "chargedAmount": "30.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 07:04:24",
+      "completedAt": "2026-02-04 07:04:24"
+    },
+    {
+      "id": "6",
+      "userId": "31",
+      "status": "failed",
+      "totalSkus": "2",
+      "processedSkus": "0",
+      "totalCost": "30.00",
+      "chargedAmount": "30.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 04:56:10",
+      "completedAt": "2026-02-04 04:56:11"
+    },
+    {
+      "id": "5",
+      "userId": "46",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/5/Photo.1_Output_x69Fddfl.zip",
+      "zipFileKey": "orders/5/Photo.1_Output_x69Fddfl.zip",
+      "createdAt": "2026-02-04 04:28:28",
+      "completedAt": "2026-02-04 04:31:30"
+    },
+    {
+      "id": "4",
+      "userId": "46",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/4/Photo.1_Output_Lrzn8XgS.zip",
+      "zipFileKey": "orders/4/Photo.1_Output_Lrzn8XgS.zip",
+      "createdAt": "2026-02-04 04:23:05",
+      "completedAt": "2026-02-04 05:03:22"
+    },
+    {
+      "id": "3",
+      "userId": "46",
+      "status": "processing",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 04:14:56",
+      "completedAt": "NULL"
+    },
+    {
+      "id": "2",
+      "userId": "46",
+      "status": "processing",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 04:06:33",
+      "completedAt": "NULL"
+    },
+    {
+      "id": "1",
+      "userId": "31",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "totalCost": "15.00",
+      "chargedAmount": "15.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-04 03:53:30",
+      "completedAt": "2026-02-04 03:53:31"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tchargedAmount\tzipFileUrl\tzipFileKey\tcreatedAt\tcompletedAt\n30001\t31\tfailed\t2\t0\t30.00\t30.00\tNULL\tNULL\t2026-02-04 07:04:24\t2026-02-04 07:04:24\n6\t31\tfailed\t2\t0\t30.00\t30.00\tNULL\tNULL\t2026-02-04 04:56:10\t2026-02-04 04:56:11\n5\t46\tcompleted\t1\t1\t15.00\t15.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/5/Photo.1_Output_x69Fddfl.zip\torders/5/Photo.1_Output_x69Fddfl.zip\t2026-02-04 04:28:28\t2026-02-04 04:31:30\n4\t46\tcompleted\t1\t1\t15.00\t15.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/4/Photo.1_Output_Lrzn8XgS.zip\torders/4/Photo.1_Output_Lrzn8XgS.zip\t2026-02-04 04:23:05\t2026-02-04 05:03:22\n3\t46\tprocessing\t1\t1\t15.00\t15.00\tNULL\tNULL\t2026-02-04 04:14:56\tNULL\n2\t46\tprocessing\t1\t1\t15.00\t15.00\tNULL\tNULL\t2026-02-04 04:06:33\tNULL\n1\t31\tfailed\t1\t0\t15.00\t15.00\tNULL\tNULL\t2026-02-04 03:53:30\t2026-02-04 03:53:31\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

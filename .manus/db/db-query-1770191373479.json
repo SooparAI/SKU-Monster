@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, email, name, balance FROM users WHERE id = 31;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, email, name, balance FROM users WHERE id = 31;",
+  "rows": [
+    {
+      "id": "31",
+      "email": "soorya@juicevendor.com",
+      "name": "Soorya Parameswaran",
+      "balance": "200.00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tname\tbalance\n31\tsoorya@juicevendor.com\tSoorya Parameswaran\t200.00\n",
+  "stderr": "",
+  "execution_time_ms": 54
+}

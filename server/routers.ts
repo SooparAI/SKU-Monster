@@ -440,8 +440,8 @@ export const appRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
         }
 
-        if (order.status !== "failed" && order.status !== "processing") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Only failed or stuck orders can be retried" });
+        if (order.status !== "failed" && order.status !== "processing" && order.status !== "pending") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Only failed, stuck, or pending orders can be retried" });
         }
 
         // Get the order items that need to be processed

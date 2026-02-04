@@ -107,7 +107,7 @@ export default function OrderDetail() {
             Download ZIP
           </Button>
         )}
-        {(order.status === "failed" || order.status === "processing") && (
+        {(order.status === "failed" || order.status === "processing" || order.status === "pending") && (
           <Button
             variant="outline"
             onClick={() => retryMutation.mutate({ orderId: order.id })}
