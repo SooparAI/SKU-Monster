@@ -1,5 +1,5 @@
-// Store configurations for SKU-based image scraping
-// Generated from parallel research of 20 fragrance retail stores
+// Store configurations for SKU image scraping
+// Fine-tuned by parallel agents to extract ONLY high-quality product images
 
 export interface StoreConfig {
   name: string;
@@ -9,7 +9,14 @@ export interface StoreConfig {
     productLink: string;
     productImage: string;
     noResults: string;
+    productFound: string;
     pagination?: string;
+  };
+  imageConfig: {
+    highResAttribute: string;
+    urlPatternFilter: RegExp;
+    minWidth: number;
+    minHeight: number;
   };
   headers?: Record<string, string>;
   rateLimit: number;
@@ -23,116 +30,99 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://www.jomashop.com",
     searchUrlTemplate: "https://www.jomashop.com/search?q={sku}",
     selectors: {
-      productLink: "a.product-card-link",
-      productImage: "img.slide-item-main-image, .product-gallery img",
-      noResults: "div.search-empty-container",
+      productLink: ".product-container a",
+      productImage: ".img-fluid.product-main-image-gallery, img#product-main-image-gallery",
+      noResults: ".search-result-title:contains('0 results')",
+      productFound: ".product-name, #product-main-image-gallery",
     },
-    rateLimit: 1000,
-    notes: "Luxury watches and fragrances. Dynamic loading may require wait.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Luxury watches and fragrances. Uses main gallery image.",
     isActive: true,
   },
   {
     name: "FragranceX",
     baseUrl: "https://www.fragrancex.com",
-    searchUrlTemplate: "https://www.fragrancex.com/search/search_results?sText={sku}",
+    searchUrlTemplate: "https://www.fragrancex.com/search?q={sku}",
     selectors: {
-      productLink: ".div-featured-img > a",
-      productImage: "#main-product-image, #thumbnail-carousel a img",
-      noResults: ".nomatch",
+      productLink: "div.grid-x a, a[href*='/products/']",
+      productImage: "div.product-image-wrap img, img[src*='products/parent'], img[src*='products/sku']",
+      noResults: ".r-zero-results-wrap, .no-results",
+      productFound: "#product-layout, .product-page",
     },
-    rateLimit: 1500,
-    notes: "Discount fragrance retailer. Good SKU search support.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder|_small|_tiny|assets\/ui/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Dynamic loading. Target parent/medium images for highest resolution.",
     isActive: true,
   },
   {
     name: "FragranceNet",
     baseUrl: "https://www.fragrancenet.com",
-    searchUrlTemplate: "https://www.fragrancenet.com/search?q={sku}",
+    searchUrlTemplate: "https://www.fragrancenet.com/search/{sku}",
     selectors: {
-      productLink: "div.result a",
-      productImage: "img.hover-zoom-image, .product-image img",
-      noResults: "div.n-found",
+      productLink: "a.g-a.result-imagelink, div.result a",
+      productImage: "meta[property='og:image'], img.img-responsive.main-image",
+      noResults: ".alert-danger, .n-found",
+      productFound: "div.g-a.pdp-top-section, .product-details",
     },
-    rateLimit: 1000,
-    notes: "Online fragrance store with good search.",
+    imageConfig: {
+      highResAttribute: "content",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses og:image meta tag for high-res images.",
     isActive: true,
   },
   {
     name: "Maxaroma",
     baseUrl: "https://www.maxaroma.com",
-    searchUrlTemplate: "https://www.maxaroma.com/p4u/key-{sku}/view",
+    searchUrlTemplate: "https://www.maxaroma.com/search?q={sku}",
     selectors: {
-      productLink: "a.product-image-photo",
-      productImage: "div.fotorama__stage__frame img, .gallery-placeholder img",
-      noResults: "p.note-msg",
+      productLink: ".product-item-info > .product-item-name > a, a.product-image-photo",
+      productImage: ".product-image-gallery > img, .gallery-placeholder img",
+      noResults: ".note-msg, .no-records",
+      productFound: ".product-view, .product-details-main",
     },
-    rateLimit: 1000,
-    notes: "Fragrance and beauty retailer.",
+    imageConfig: {
+      highResAttribute: "data-zoom-image",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Has data-zoom-image attribute for high-res.",
     isActive: true,
-  },
-  {
-    name: "Walmart",
-    baseUrl: "https://www.walmart.com",
-    searchUrlTemplate: "https://www.walmart.com/search?q={sku}",
-    selectors: {
-      productLink: "a[data-testid='product-title-link']",
-      productImage: "img.hover-zoom-hero-image, img[data-testid='product-image']",
-      noResults: "div[data-testid='zero-results']",
-    },
-    rateLimit: 2000,
-    notes: "Major US retailer. Strong anti-bot protection - may require special handling.",
-    isActive: false, // Disabled due to anti-bot protection
-  },
-  {
-    name: "Amazon",
-    baseUrl: "https://www.amazon.com",
-    searchUrlTemplate: "https://www.amazon.com/s?k={sku}",
-    selectors: {
-      productLink: "a.a-link-normal.s-no-outline",
-      productImage: "img.s-image, #landingImage, #imgTagWrapperId img",
-      noResults: ".s-no-results-message",
-    },
-    rateLimit: 2000,
-    notes: "E-commerce marketplace. Strong anti-bot measures - may have limited success.",
-    isActive: false, // Disabled due to anti-bot protection
-  },
-  {
-    name: "Sephora",
-    baseUrl: "https://www.sephora.com",
-    searchUrlTemplate: "https://www.sephora.com/search?keyword={sku}",
-    selectors: {
-      productLink: "a[data-test-id='product-link']",
-      productImage: "img[data-test-id='product-image'], .product-image img",
-      noResults: "[data-test-id='no-results']",
-    },
-    rateLimit: 2000,
-    notes: "Beauty retailer. May have anti-bot measures.",
-    isActive: false, // Disabled due to anti-bot protection
-  },
-  {
-    name: "Nordstrom",
-    baseUrl: "https://www.nordstrom.com",
-    searchUrlTemplate: "https://www.nordstrom.com/browse/search?keyword={sku}",
-    selectors: {
-      productLink: "a[href*='/s/']",
-      productImage: "img[alt*='product'], .product-photo img",
-      noResults: "div[data-test-id='no-results']",
-    },
-    rateLimit: 1000,
-    notes: "Department store. Anti-bot protection may apply.",
-    isActive: false, // Disabled due to anti-bot protection
   },
   {
     name: "Macy's",
     baseUrl: "https://www.macys.com",
     searchUrlTemplate: "https://www.macys.com/shop/featured/{sku}",
     selectors: {
-      productLink: "a.brand-and-name",
-      productImage: "img[data-auto='product-image'], .product-image img",
-      noResults: "div.no-results-container",
+      productLink: "a.product-desc-link, .productThumbnail a",
+      productImage: "div.main-image-container img, .product-image img",
+      noResults: ".runway-header, .no-results",
+      productFound: "div.product-details, .product-name",
     },
-    rateLimit: 1500,
-    notes: "Department store.",
+    imageConfig: {
+      highResAttribute: "data-src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses data-src for lazy-loaded high-res images.",
     isActive: true,
   },
   {
@@ -140,90 +130,119 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://www.ulta.com",
     searchUrlTemplate: "https://www.ulta.com/search?search={sku}",
     selectors: {
-      productLink: ".product-card-link",
+      productLink: "a.ProductCard, .product-card a",
       productImage: ".MediaWrapper__Image img, .product-image img",
-      noResults: "h1:contains('We couldn\\'t find any results')",
+      noResults: ".NoResults__container, .no-results",
+      productFound: ".ProductPage, .product-details",
     },
-    rateLimit: 1000,
-    notes: "Beauty retailer. Dynamic loading for search results.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "SPA - may need wait for dynamic content.",
     isActive: true,
   },
   {
     name: "BeautyTheShop",
     baseUrl: "https://www.beautytheshop.com",
-    searchUrlTemplate: "https://www.beautytheshop.com/es/buscar?search={sku}",
+    searchUrlTemplate: "https://www.beautytheshop.com/gb/catalogsearch/result/?q={sku}",
     selectors: {
-      productLink: ".product-image-container a",
-      productImage: "#product-image-container img, #product-image-thumbs img",
-      noResults: ".search-no-results",
+      productLink: "a.product-image, .product-item a",
+      productImage: "img#image-main, .product-image-gallery img",
+      noResults: ".page-title > h1:contains('Search results')",
+      productFound: ".product-view, .product-info-main",
     },
-    rateLimit: 1000,
-    notes: "Online beauty store. Spanish interface.",
+    imageConfig: {
+      highResAttribute: "data-zoom-image",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Has data-zoom-image for high-res.",
     isActive: true,
   },
   {
     name: "50-ml.com",
     baseUrl: "https://50-ml.com",
-    searchUrlTemplate: "https://50-ml.com/catalogsearch/result?q={sku}",
+    searchUrlTemplate: "https://50-ml.com/catalogsearch/result/?q={sku}",
     selectors: {
-      productLink: "a.product.photo",
-      productImage: "img.fotorama__img, .product-image img",
-      noResults: "div.message.info.empty",
+      productLink: "a.product-item-link, .product-item a",
+      productImage: ".product-image-gallery img, .fotorama__img",
+      noResults: ".note-msg, .message.info.empty",
+      productFound: ".product-info-main, .product-view",
     },
-    rateLimit: 1000,
-    notes: "Niche fragrance retailer. SKU search may be limited.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Inconsistent structure - may need fallback selectors.",
     isActive: true,
   },
   {
     name: "Maple Prime",
     baseUrl: "https://mapleprime.com",
-    searchUrlTemplate: "https://mapleprime.com/pages/search?q={sku}",
+    searchUrlTemplate: "https://mapleprime.com/search?q={sku}",
     selectors: {
-      productLink: ".snize-product-list-item-image a",
-      productImage: ".product-gallery__media img, .product-image img",
-      noResults: ".snize-page-title",
+      productLink: "a.product-item__image-wrapper, .product-card a",
+      productImage: "div.swiper-slide-active > img, .product-single__media img",
+      noResults: "div.shogun-heading-component:contains('No results')",
+      productFound: "div.product-single, .product-info",
     },
-    rateLimit: 1000,
-    notes: "Fragrance retailer. Shopify-based.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses swiper for product images.",
     isActive: true,
   },
   {
     name: "Luxe Fora",
     baseUrl: "https://luxefora.com",
-    searchUrlTemplate: "https://luxefora.com/search?q={sku}",
+    searchUrlTemplate: "https://luxefora.com/search?type=product&q={sku}",
     selectors: {
-      productLink: "a.full-unstyled-link",
+      productLink: "a.card-wrapper, .product-card a",
       productImage: "div.product__media-item img, .product-image img",
-      noResults: "h2.template-search__title",
+      noResults: ".template-search--empty, .no-results",
+      productFound: "h1.product__title, .product-single",
     },
-    rateLimit: 1000,
-    notes: "Luxury fragrance store. Shopify-powered.",
+    imageConfig: {
+      highResAttribute: "srcset",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses srcset for responsive high-res images.",
     isActive: true,
-  },
-  {
-    name: "Fandi Perfume",
-    baseUrl: "https://fandi-perfume.com",
-    searchUrlTemplate: "https://fandi-perfume.com/search?q={sku}",
-    selectors: {
-      productLink: ".product-card a",
-      productImage: ".product-gallery img, .product-image img",
-      noResults: ".search-no-results",
-    },
-    rateLimit: 1000,
-    notes: "Middle East fragrance retailer. SKU search may be limited.",
-    isActive: false, // May not support SKU search
   },
   {
     name: "Paris Gallery",
     baseUrl: "https://parisgallery.ae",
-    searchUrlTemplate: "https://parisgallery.ae/search?q={sku}&options%5Bprefix%5D=last",
+    searchUrlTemplate: "https://parisgallery.ae/search?q={sku}",
     selectors: {
-      productLink: "a.grid-view-item__link",
-      productImage: "img.product-single__photo-img, .product-image img",
-      noResults: "h1.template-search__title",
+      productLink: "a[href*='/products/'], .product-card a",
+      productImage: "meta[property='og:image'], .product-image img",
+      noResults: ".shopify-section--main-search:contains('No results')",
+      productFound: "h1.product-title, .product-single",
     },
-    rateLimit: 1000,
-    notes: "UAE luxury retailer.",
+    imageConfig: {
+      highResAttribute: "content",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses og:image meta tag for high-res.",
     isActive: true,
   },
   {
@@ -231,12 +250,19 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://elegancestyle.ae",
     searchUrlTemplate: "https://elegancestyle.ae/catalogsearch/result/?q={sku}",
     selectors: {
-      productLink: "a.product-item-link",
-      productImage: "img.gallery-placeholder__image, .product-image img",
-      noResults: ".message.info.empty",
+      productLink: "a.product-item-link, .product-item a",
+      productImage: "img.fotorama__img, .product-image-gallery img",
+      noResults: ".message.info.empty, .no-results",
+      productFound: ".product-info-main, .product-view",
     },
-    rateLimit: 1000,
-    notes: "UAE beauty retailer. Magento-based.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Uses fotorama gallery for product images.",
     isActive: true,
   },
   {
@@ -244,12 +270,19 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://www.vperfumes.com",
     searchUrlTemplate: "https://www.vperfumes.com/ae-en/products?search={sku}",
     selectors: {
-      productLink: "div.product-card > a",
-      productImage: "figure.relative img, .product-image img",
-      noResults: "div.text-center.my-5 > h3",
+      productLink: "a[href^='/ae-en/product/'], .product-card a",
+      productImage: "figure img, .product-image img",
+      noResults: "div.text-center > h3:contains('No products')",
+      productFound: "h1.md\\:text-2xl, .product-details",
     },
-    rateLimit: 1000,
-    notes: "UAE fragrance retailer.",
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "Standard e-commerce layout.",
     isActive: true,
   },
   {
@@ -257,12 +290,19 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://www.alluringauras.com",
     searchUrlTemplate: "https://www.alluringauras.com/?s={sku}&product_cat=&post_type=product",
     selectors: {
-      productLink: "h3.tbay-woocommerce-title-product a",
-      productImage: "div.woocommerce-product-gallery__image > a > img, .product-image img",
-      noResults: "p.woocommerce-info",
+      productLink: "a.image-fade, .product-item a",
+      productImage: "div.woocommerce-product-gallery__image a, .product-image img",
+      noResults: "p.woocommerce-info:contains('No products')",
+      productFound: "h1.product_title.entry-title, .product-summary",
     },
-    rateLimit: 1000,
-    notes: "Online fragrance store. WooCommerce-based.",
+    imageConfig: {
+      highResAttribute: "href",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "WooCommerce - uses gallery href for high-res.",
     isActive: true,
   },
   {
@@ -270,27 +310,34 @@ export const storeConfigs: StoreConfig[] = [
     baseUrl: "https://www.eshtir.com",
     searchUrlTemplate: "https://www.eshtir.com/?s={sku}&post_type=product",
     selectors: {
-      productLink: "a.woocommerce-LoopProduct-link",
-      productImage: ".woocommerce-product-gallery__image img, .product-image img",
-      noResults: ".woocommerce-info",
+      productLink: "a.woocommerce-LoopProduct-link, .product-item a",
+      productImage: "img.wp-post-image, .product-image img",
+      noResults: "p.woocommerce-info:contains('No products')",
+      productFound: "div.product-summary, .product-details",
     },
-    rateLimit: 1000,
-    notes: "Middle East e-commerce. WooCommerce-based.",
-    isActive: true,
+    imageConfig: {
+      highResAttribute: "src",
+      urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i,
+      minWidth: 300,
+      minHeight: 300,
+    },
+    rateLimit: 500,
+    notes: "WooCommerce - focuses on electronics, may return wrong products for fragrance SKUs.",
+    isActive: false, // Disabled - not a fragrance-focused store
   },
 ];
 
-// Get all active stores
+// Helper functions
 export function getActiveStores(): StoreConfig[] {
-  return storeConfigs.filter(store => store.isActive);
+  return storeConfigs.filter((store) => store.isActive);
 }
 
-// Get store by name
-export function getStoreByName(name: string): StoreConfig | undefined {
-  return storeConfigs.find(store => store.name.toLowerCase() === name.toLowerCase());
-}
-
-// Build search URL for a store and SKU
 export function buildSearchUrl(store: StoreConfig, sku: string): string {
   return store.searchUrlTemplate.replace("{sku}", encodeURIComponent(sku));
+}
+
+export function isValidProductImage(url: string, store: StoreConfig): boolean {
+  if (!url) return false;
+  if (store.imageConfig.urlPatternFilter.test(url)) return false;
+  return true;
 }

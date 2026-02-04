@@ -91,3 +91,16 @@
 - [x] Fix scraper stuck on "Waiting..." status - Fixed zip stream handling
 - [x] Fix orders failing with 0 SKUs processed - Added retry functionality for failed/stuck orders
 - [x] Debug and fix scraper failing with 0 SKUs processed - Fixed retry logic to allow pending orders
+
+
+## Scraper Quality Improvements (New Requirement)
+- [x] Fine-tune all 20 store scrapers to extract only HQ product images
+- [x] Filter out logos, payment icons, banners, and non-product images
+- [x] Get highest resolution images (not thumbnails)
+- [x] Skip store entirely if product not found (no garbage)
+- [x] Minimum image size filter (500x500 pixels using sharp library)
+- [x] Parallel scraping (5 stores at a time for ~50s total vs 3+ min sequential)
+- [x] Anti-detection measures (puppeteer-extra stealth plugin, random user agents)
+- [x] Fragrance product verification (reject non-fragrance products like TVs)
+- [x] Limit to 5 images per store to focus on main product images
+- [ ] Some stores may rate-limit or block - needs monitoring
