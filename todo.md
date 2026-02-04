@@ -80,3 +80,7 @@
 - [x] Login page UI
 - [x] Register page UI
 - [x] Remove Manus OAuth dependency (kept as fallback)
+
+
+## Bug Fixes
+- [x] Fix login for existing OAuth users showing "Please use OAuth to sign in"

@@ -107,6 +107,7 @@ export async function loginUser(params: {
     balance: string;
   };
   error?: string;
+  needsPasswordSetup?: boolean;
 }> {
   const { email, password } = params;
   const db = await getDb();
@@ -130,7 +131,25 @@ export async function loginUser(params: {
 
     // Check if user has a password (might be OAuth user)
     if (!user.passwordHash) {
-      return { success: false, error: "Please use OAuth to sign in" };
+      // OAuth user trying to login with password - set their password
+      const passwordHash = await hashPassword(password);
+      await db
+        .update(users)
+        .set({ passwordHash, loginMethod: "email", lastSignedIn: new Date() })
+        .where(eq(users.id, user.id));
+      
+      // Create token and log them in
+      const token = await createToken(user.id, user.email);
+      return {
+        success: true,
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          balance: user.balance,
+        },
+      };
     }
 
     // Verify password
