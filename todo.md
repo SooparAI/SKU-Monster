@@ -118,3 +118,35 @@
 - **After**: 10 HQ images (500x500 to 1080x1080) from direct URL scraping
 - **Speed**: ~60 seconds total (Perplexity lookup + direct scraping + fallback stores)
 - **Sources**: Bonanza, ForeverLux, Jomashop, Gift Express, Fandi Perfume, Luckyscent
+
+
+## Branding Update
+- [ ] Generate SKU Monster logo
+- [ ] Update app name from Photo.1 to SKU Monster
+- [ ] Update favicon and app logo
+
+
+## HQ Image Extraction Improvement
+- [ ] Analyze CDN URL patterns to find full-resolution versions
+- [ ] Strip compression parameters from image URLs (e.g., ?w=500, ?quality=80)
+- [ ] Extract data-zoom, data-large, srcset attributes for HQ versions
+- [ ] Target images in MB range, not KB
+
+
+## 4K HQ Image Pipeline (Target: <$0.03/SKU)
+- [x] Smart image scoring and filtering (FREE - no AI needed)
+  - URL pattern filtering (removes logos, icons, banners)
+  - Dimension scoring (prefers 500px+ images)
+  - Aspect ratio scoring (prefers square/portrait for perfume bottles)
+  - Color variance analysis (rejects placeholders)
+  - Light background detection (product photo style)
+- [x] Add Real-ESRGAN upscaling via Replicate API for 4K output
+- [x] Integrate all components into scraper pipeline
+- [x] Test end-to-end and verify quality + cost
+
+## Final Results (4K HQ Pipeline)
+- **Image 1**: 2000x2000 (2.6 MB) - upscaled from 500x500
+- **Image 2**: 4320x4320 (7.0 MB) - upscaled from 1080x1080
+- **Image 3**: 4320x4320 (11.0 MB) - upscaled from 1080x1080
+- **Total cost**: $0.0012 per SKU (well under $0.03 target!)
+- **All images are correct product**: Bottega Veneta Illusione perfume

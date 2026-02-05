@@ -8,6 +8,7 @@ import puppeteerExtra from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import sharp from "sharp";
 import { lookupProductBySku, ProductLookupResult } from "./perplexityLookup";
+import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
 
 // Add stealth plugin to avoid bot detection
 puppeteerExtra.use(StealthPlugin());
@@ -266,30 +267,200 @@ async function extractAllProductImages(page: Page, store: StoreConfig): Promise<
   return uniqueUrls.slice(0, 5);
 }
 
-// Try to upgrade image URLs to higher resolution versions
+// Comprehensive CDN URL upgrade function to get highest quality images
 function upgradeImageUrl(url: string): string {
-  // FragranceX: upgrade /sku/small/ to /parent/medium/ pattern
-  // The parent/medium images are 600x511 vs small at 250x250
-  if (url.includes('img.fragrancex.com')) {
-    // Extract the image ID from the URL
-    const match = url.match(/\/(\d+w)\.jpg/);
-    if (match) {
-      // Try to use parent/medium which is the highest available
-      if (url.includes('/sku/small/')) {
-        return url.replace('/sku/small/', '/parent/medium/');
-      }
+  let upgraded = url;
+  
+  // === CLOUDINARY (used by many stores) ===
+  // Pattern: /upload/w_300,h_300,c_fit/ or /upload/f_auto,q_auto:eco/
+  if (upgraded.includes('cloudinary.com') || upgraded.includes('res.cloudinary.com')) {
+    // Remove all transformation parameters to get original
+    upgraded = upgraded.replace(/\/upload\/[^/]+\//, '/upload/');
+    // Or maximize quality: replace with high quality params
+    upgraded = upgraded.replace(/\/upload\//, '/upload/q_100,f_png/');
+  }
+  
+  // === SHOPIFY CDN ===
+  // Pattern: _100x100.jpg, _200x.jpg, _x200.jpg, _small.jpg, _medium.jpg
+  if (upgraded.includes('cdn.shopify.com') || upgraded.includes('.myshopify.com')) {
+    // Remove size suffix to get original
+    upgraded = upgraded.replace(/_\d+x\d*\./, '.');
+    upgraded = upgraded.replace(/_\d*x\d+\./, '.');
+    upgraded = upgraded.replace(/_(pico|icon|thumb|small|compact|medium|large|grande|master|original)\./gi, '.');
+    // Remove crop parameters
+    upgraded = upgraded.replace(/_crop_[a-z]+\./gi, '.');
+  }
+  
+  // === SCENE7 / ADOBE DYNAMIC MEDIA (Macy's, Nordstrom, Sephora, etc.) ===
+  // Pattern: ?$XXX$ or ?wid=300&hei=300 or ?op_sharpen=1&wid=500
+  if (upgraded.includes('scene7.com') || upgraded.includes('/is/image/')) {
+    // Remove all query parameters to get full resolution
+    upgraded = upgraded.split('?')[0];
+    // Add max quality params
+    upgraded += '?wid=2000&hei=2000&fmt=png-alpha&qlt=100';
+  }
+  
+  // === AKAMAI IMAGE MANAGER ===
+  // Pattern: ?imwidth=300 or ?im=Resize,width=300
+  if (upgraded.includes('akamaized.net') || upgraded.includes('akamaiobjects.com')) {
+    upgraded = upgraded.replace(/\?im(width|height)=\d+/gi, '');
+    upgraded = upgraded.replace(/\?im=Resize[^&]*/gi, '');
+    upgraded = upgraded.split('?')[0];
+  }
+  
+  // === IMGIX ===
+  // Pattern: ?w=300&h=300&fit=crop or ?auto=format,compress
+  if (upgraded.includes('imgix.net') || upgraded.includes('.imgix.')) {
+    upgraded = upgraded.split('?')[0];
+    upgraded += '?q=100&auto=format';
+  }
+  
+  // === FASTLY IMAGE OPTIMIZER ===
+  // Pattern: ?width=300&height=300&quality=80
+  if (upgraded.includes('fastly.net') || upgraded.includes('global.ssl.fastly.net')) {
+    upgraded = upgraded.replace(/[?&](width|height|quality|fit|crop)=[^&]*/gi, '');
+    if (!upgraded.includes('?')) upgraded += '?';
+    upgraded += '&quality=100';
+  }
+  
+  // === CONTENTFUL ===
+  // Pattern: ?w=300&h=300&q=80&fm=webp
+  if (upgraded.includes('ctfassets.net') || upgraded.includes('contentful.com')) {
+    upgraded = upgraded.split('?')[0];
+    upgraded += '?q=100&fm=png';
+  }
+  
+  // === SANITY.IO ===
+  // Pattern: ?w=300&h=300&q=80
+  if (upgraded.includes('sanity.io') || upgraded.includes('cdn.sanity.io')) {
+    upgraded = upgraded.replace(/\?.*$/, '');
+    upgraded += '?q=100';
+  }
+  
+  // === WOOCOMMERCE / WORDPRESS ===
+  // Pattern: -300x300.jpg, -150x150.jpg
+  if (upgraded.match(/-\d+x\d+\.(jpg|jpeg|png|webp)/i)) {
+    upgraded = upgraded.replace(/-\d+x\d+\.(jpg|jpeg|png|webp)/i, '.$1');
+  }
+  
+  // === MAGENTO ===
+  // Pattern: /cache/1/image/300x300/ or /resize/300x300/
+  if (upgraded.includes('/cache/') && upgraded.includes('/image/')) {
+    upgraded = upgraded.replace(/\/cache\/\d+\/image\/\d+x\d+\//gi, '/cache/1/image/');
+  }
+  if (upgraded.includes('/resize/')) {
+    upgraded = upgraded.replace(/\/resize\/\d+x\d*\//gi, '/');
+    upgraded = upgraded.replace(/\/resize\/\d*x\d+\//gi, '/');
+  }
+  
+  // === FRAGRANCEX ===
+  if (upgraded.includes('img.fragrancex.com')) {
+    if (upgraded.includes('/sku/small/')) {
+      upgraded = upgraded.replace('/sku/small/', '/parent/medium/');
     }
   }
   
-  // FragranceNet: upgrade thumbnail URLs
-  if (url.includes('fragrancenet.com')) {
-    url = url.replace(/_s\./g, '_l.').replace(/_m\./g, '_l.');
+  // === FRAGRANCENET ===
+  if (upgraded.includes('fragrancenet.com')) {
+    upgraded = upgraded.replace(/_s\./g, '_l.').replace(/_m\./g, '_l.');
   }
   
-  // Generic: try to remove size suffixes
-  url = url.replace(/[-_](small|thumb|thumbnail|xs|sm|md)\./gi, '.');
+  // === SEPHORA ===
+  if (upgraded.includes('sephora.com') || upgraded.includes('sephora.')) {
+    // Remove size constraints
+    upgraded = upgraded.replace(/\?.*$/, '');
+    upgraded = upgraded.replace(/_\d+x\d+_/g, '_');
+  }
   
-  return url;
+  // === NORDSTROM ===
+  if (upgraded.includes('nordstrom.com') || upgraded.includes('n.nordstrommedia.com')) {
+    upgraded = upgraded.split('?')[0];
+    upgraded += '?h=2000&w=2000';
+  }
+  
+  // === BLOOMINGDALE'S / MACY'S ===
+  if (upgraded.includes('bloomingdales.com') || upgraded.includes('macys.com')) {
+    upgraded = upgraded.split('?')[0];
+    if (upgraded.includes('scene7')) {
+      upgraded += '?wid=2000&hei=2000&fmt=png-alpha&qlt=100';
+    }
+  }
+  
+  // === NEIMAN MARCUS / BERGDORF ===
+  if (upgraded.includes('neimanmarcus.com') || upgraded.includes('bergdorfgoodman.com')) {
+    upgraded = upgraded.split('?')[0];
+    upgraded += '?wid=2000&hei=2000';
+  }
+  
+  // === HARRODS ===
+  if (upgraded.includes('harrods.com')) {
+    upgraded = upgraded.replace(/\/w\d+\//g, '/w2000/');
+    upgraded = upgraded.replace(/\?.*$/, '');
+  }
+  
+  // === SELFRIDGES ===
+  if (upgraded.includes('selfridges.com')) {
+    upgraded = upgraded.replace(/\?.*$/, '');
+    upgraded = upgraded.replace(/_\d+\./g, '.');
+  }
+  
+  // === NET-A-PORTER / MR PORTER ===
+  if (upgraded.includes('net-a-porter.com') || upgraded.includes('mrporter.com')) {
+    upgraded = upgraded.replace(/_pp\.jpg/g, '_in_pp.jpg');
+    upgraded = upgraded.replace(/\/w\d+\//g, '/w2000/');
+  }
+  
+  // === COSBAR ===
+  if (upgraded.includes('cosbar.com')) {
+    upgraded = upgraded.replace(/\?.*$/, '');
+    // Try to get original by removing size suffix
+    upgraded = upgraded.replace(/_\d+x\d+\./g, '.');
+  }
+  
+  // === JOMASHOP ===
+  if (upgraded.includes('jomashop.com')) {
+    upgraded = upgraded.replace(/\?.*$/, '');
+    upgraded = upgraded.replace(/-\d+x\d+\./g, '.');
+  }
+  
+  // === DOUGLAS / NOTINO / FLACONI (German/EU stores) ===
+  if (upgraded.includes('douglas.') || upgraded.includes('notino.') || upgraded.includes('flaconi.')) {
+    upgraded = upgraded.replace(/\/\d+x\d+\//g, '/');
+    upgraded = upgraded.replace(/\?.*$/, '');
+  }
+  
+  // === STRAWBERRYNET ===
+  if (upgraded.includes('strawberrynet.com')) {
+    upgraded = upgraded.replace(/_\d+\./g, '.');
+    upgraded = upgraded.replace(/\/thumb\//g, '/large/');
+  }
+  
+  // === GENERIC PATTERNS ===
+  // Remove common size suffixes
+  upgraded = upgraded.replace(/[-_](small|thumb|thumbnail|xs|sm|md|mini|tiny|preview)\./gi, '.');
+  
+  // Remove numeric size patterns like _300. or -500.
+  upgraded = upgraded.replace(/[-_]\d{2,4}\.(jpg|jpeg|png|webp)/gi, '.$1');
+  
+  // Remove quality parameters
+  upgraded = upgraded.replace(/[?&]q(uality)?=\d+/gi, '');
+  upgraded = upgraded.replace(/[?&]w(idth)?=\d+/gi, '');
+  upgraded = upgraded.replace(/[?&]h(eight)?=\d+/gi, '');
+  
+  // Convert webp to png/jpg for potentially higher quality source
+  // (Only if the URL structure suggests there's an original)
+  if (upgraded.includes('format=webp') || upgraded.includes('fm=webp')) {
+    upgraded = upgraded.replace(/format=webp/gi, 'format=png');
+    upgraded = upgraded.replace(/fm=webp/gi, 'fm=png');
+  }
+  
+  // Clean up any double slashes (except after protocol)
+  upgraded = upgraded.replace(/([^:])\/{2,}/g, '$1/');
+  
+  // Clean up empty query strings
+  upgraded = upgraded.replace(/\?&/g, '?').replace(/\?$/g, '');
+  
+  return upgraded;
 }
 
 // Verify the product page is actually for a fragrance/perfume product
@@ -804,10 +975,7 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     
     console.log(`Parallel scraping complete. Found ${allImages.length} total images.`);
 
-    // Download and upload images to S3 with quality filtering
-    console.log(`Found ${allImages.length} total images for SKU ${sku}, filtering and uploading...`);
-    
-    // Deduplicate by URL
+    // Deduplicate by URL first
     const uniqueUrls = new Set<string>();
     const uniqueImages = allImages.filter(img => {
       if (uniqueUrls.has(img.imageUrl)) return false;
@@ -815,32 +983,55 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
       return true;
     });
     
-    console.log(`After deduplication: ${uniqueImages.length} unique images`);
+    console.log(`Found ${uniqueImages.length} unique images for SKU ${sku}`);
     
-    let imageIndex = 0;
+    // STEP: Process images through HQ pipeline (filtering + upscaling)
+    const imageUrls = uniqueImages.map(img => img.imageUrl);
+    const hqResult = await processImagesHQ(
+      sku,
+      imageUrls,
+      productLookup?.productName,
+      productLookup?.brand
+    );
+    
+    console.log(`[HQ Pipeline] Processing steps: ${hqResult.processingSteps.join(' → ')}`);
+    console.log(`[HQ Pipeline] Result: ${hqResult.images.length} HQ images, cost: $${hqResult.totalCost.toFixed(4)}`);
+    
+    // Upload HQ processed images to S3
+    const uploadedHQ = await uploadHQImages(sku, hqResult.images);
+    
+    // Map uploaded images back to the result format
     let uploadedCount = 0;
-    for (const image of uniqueImages) {
-      try {
-        const uploaded = await downloadAndUploadImage(
-          image.imageUrl,
-          sku,
-          image.storeName,
-          imageIndex++,
-          200, // minWidth
-          200  // minHeight
-        );
-        if (uploaded) {
-          image.s3Key = uploaded.s3Key;
-          image.s3Url = uploaded.s3Url;
-          image.width = uploaded.width;
-          image.height = uploaded.height;
-          uploadedCount++;
-        }
-      } catch (err) {
-        console.error(`Failed to upload image ${imageIndex} for SKU ${sku}:`, err);
+    for (let i = 0; i < uploadedHQ.length && i < uniqueImages.length; i++) {
+      const uploaded = uploadedHQ[i];
+      if (uploaded && uniqueImages[i]) {
+        uniqueImages[i].s3Key = uploaded.s3Key;
+        uniqueImages[i].s3Url = uploaded.s3Url;
+        uniqueImages[i].width = uploaded.width;
+        uniqueImages[i].height = uploaded.height;
+        uploadedCount++;
       }
     }
-    console.log(`Uploaded ${uploadedCount}/${uniqueImages.length} HQ images for SKU ${sku}`);
+    
+    // If HQ pipeline produced more images than we had, add them
+    for (let i = uniqueImages.length; i < uploadedHQ.length; i++) {
+      const uploaded = uploadedHQ[i];
+      if (uploaded) {
+        allImages.push({
+          sku,
+          storeName: 'HQ_Pipeline',
+          sourceUrl: hqResult.images[i]?.originalUrl || '',
+          imageUrl: hqResult.images[i]?.processedUrl || '',
+          s3Key: uploaded.s3Key,
+          s3Url: uploaded.s3Url,
+          width: uploaded.width,
+          height: uploaded.height,
+        });
+        uploadedCount++;
+      }
+    }
+    
+    console.log(`Uploaded ${uploadedCount} HQ images for SKU ${sku}`);
   } finally {
     await page.close();
   }
