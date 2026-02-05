@@ -1,5 +1,5 @@
 import puppeteer, { Browser, Page } from "puppeteer";
-import { StoreConfig, getActiveStores, buildSearchUrl, isValidProductImage } from "./storeConfigs";
+import { StoreConfig, storeConfigs, getActiveStores, buildSearchUrl, isValidProductImage } from "./storeConfigs";
 import { storagePut } from "../storage";
 import { nanoid } from "nanoid";
 import archiver from "archiver";
@@ -7,6 +7,7 @@ import { Writable } from "stream";
 import puppeteerExtra from "puppeteer-extra";
 import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import sharp from "sharp";
+import { lookupProductBySku, ProductLookupResult } from "./perplexityLookup";
 
 // Add stealth plugin to avoid bot detection
 puppeteerExtra.use(StealthPlugin());
@@ -616,21 +617,149 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
   // Set viewport to desktop size
   await page.setViewport({ width: 1920, height: 1080 });
 
-  const stores = getActiveStores();
   const allImages: ScrapedImageResult[] = [];
   const errors: string[] = [];
 
   try {
-    // PARALLEL SCRAPING: Run all stores concurrently using separate pages
+    // STEP 1: Use Perplexity to find which stores carry this product
+    console.log(`[Perplexity] Looking up SKU ${sku}...`);
+    let productLookup: ProductLookupResult | null = null;
+    let storesToScrape: StoreConfig[] = [];
+    
+    try {
+      productLookup = await lookupProductBySku(sku);
+      
+      if (productLookup.productName) {
+        console.log(`[Perplexity] Found: ${productLookup.productName} by ${productLookup.brand}`);
+        console.log(`[Perplexity] Suggested stores: ${productLookup.suggestedStores.map(s => s.name).join(', ')}`);
+        console.log(`[Perplexity] Matched scrapers: ${productLookup.matchedStores.join(', ') || 'None'}`);
+        
+        // DIRECT URL SCRAPING: Scrape the exact product URLs from Perplexity
+        if (productLookup.suggestedStores.length > 0) {
+          console.log(`[Direct URL] Scraping ${productLookup.suggestedStores.length} direct product URLs from Perplexity...`);
+          
+          const directUrlResults = await Promise.all(
+            productLookup.suggestedStores.slice(0, 5).map(async (store) => {
+              try {
+                const directPage = await browser.newPage();
+                await directPage.setUserAgent(getRandomUserAgent());
+                await directPage.setViewport({ width: 1920, height: 1080 });
+                
+                console.log(`  [${store.name}] Navigating to direct URL: ${store.url}`);
+                await directPage.goto(store.url, { waitUntil: "networkidle2", timeout: 25000 });
+                await randomDelay(1000, 2000);
+                
+                // Extract all product images using generic selectors
+                const images = await extractAllProductImages(directPage, {
+                  name: store.name,
+                  baseUrl: store.url,
+                  searchUrlTemplate: store.url,
+                  selectors: {
+                    productFound: "img",
+                    noResults: ".no-results, .not-found",
+                    productImage: "img[src*='product'], .product-image img, .gallery img, [data-zoom-image]",
+                    productLink: "a"
+                  },
+                  imageConfig: {
+                    minWidth: 400,
+                    minHeight: 400,
+                    highResAttribute: "data-zoom-image",
+                    urlPatternFilter: /logo|icon|banner|sprite|thumb|placeholder/i
+                  },
+                  rateLimit: 1000,
+                  notes: "Direct URL scrape",
+                  isActive: true
+                });
+                
+                await directPage.close();
+                
+                if (images.length > 0) {
+                  console.log(`  [${store.name}] Found ${images.length} images from direct URL`);
+                  return images.map(url => ({
+                    sku,
+                    storeName: store.name,
+                    sourceUrl: store.url,
+                    imageUrl: url
+                  }));
+                }
+                return [];
+              } catch (err) {
+                console.error(`  [${store.name}] Direct URL scrape failed: ${err}`);
+                return [];
+              }
+            })
+          );
+          
+          // Collect direct URL results
+          for (const results of directUrlResults) {
+            allImages.push(...results);
+          }
+          console.log(`[Direct URL] Collected ${allImages.length} images from direct URLs`);
+        }
+        
+        // Also use matched scrapers if any
+        if (productLookup.matchedStores.length > 0) {
+          // Use matched stores PLUS top fragrance stores for better coverage
+          const matchedStores = storeConfigs.filter(s => 
+            productLookup!.matchedStores.some(matched => 
+              matched.toLowerCase() === s.name.toLowerCase()
+            )
+          );
+          
+          // Also add top fragrance stores for better coverage
+          const TOP_STORES = ["FragranceNet", "Sephora", "Nordstrom", "Notino", "Luckyscent"];
+          const topStores = storeConfigs.filter(s => 
+            TOP_STORES.some(top => s.name.toLowerCase().includes(top.toLowerCase()))
+          );
+          
+          // Combine and deduplicate
+          const allStores = [...matchedStores];
+          for (const store of topStores) {
+            if (!allStores.some(s => s.name === store.name)) {
+              allStores.push(store);
+            }
+          }
+          storesToScrape = allStores;
+          console.log(`[Perplexity] Will also scrape ${storesToScrape.length} configured stores`);
+        }
+      } else {
+        console.log(`[Perplexity] Could not identify product for SKU ${sku}`);
+      }
+    } catch (perplexityErr) {
+      console.error(`[Perplexity] Lookup failed: ${perplexityErr}`);
+    }
+    
+    // STEP 2: If no Perplexity matches, use top fragrance stores as fallback
+    const TOP_FRAGRANCE_STORES = [
+      "FragranceNet", "Jomashop", "Sephora", "Nordstrom", "Ulta Beauty",
+      "Notino", "Luckyscent", "Strawberrynet", "Douglas", "Harrods"
+    ];
+    
+    if (storesToScrape.length === 0) {
+      console.log(`[Fallback] No Perplexity matches, using top 10 fragrance stores`);
+      storesToScrape = storeConfigs.filter(s => 
+        TOP_FRAGRANCE_STORES.some(top => 
+          s.name.toLowerCase().includes(top.toLowerCase())
+        )
+      );
+    }
+    
+    // If still no stores (shouldn't happen), use all active stores
+    if (storesToScrape.length === 0) {
+      console.log(`[Fallback] Using all ${getActiveStores().length} active stores`);
+      storesToScrape = getActiveStores();
+    }
+    
+    // PARALLEL SCRAPING: Run stores concurrently using separate pages
     const PARALLEL_LIMIT = 5; // Run 5 stores at a time to avoid overwhelming resources
     
-    console.log(`Starting parallel scraping across ${stores.length} stores (${PARALLEL_LIMIT} concurrent)...`);
+    console.log(`Starting parallel scraping across ${storesToScrape.length} stores (${PARALLEL_LIMIT} concurrent)...`);
     
     // Process stores in batches
-    for (let i = 0; i < stores.length; i += PARALLEL_LIMIT) {
-      const batch = stores.slice(i, i + PARALLEL_LIMIT);
+    for (let i = 0; i < storesToScrape.length; i += PARALLEL_LIMIT) {
+      const batch = storesToScrape.slice(i, i + PARALLEL_LIMIT);
       const batchNum = Math.floor(i / PARALLEL_LIMIT) + 1;
-      const totalBatches = Math.ceil(stores.length / PARALLEL_LIMIT);
+      const totalBatches = Math.ceil(storesToScrape.length / PARALLEL_LIMIT);
       
       console.log(`Batch ${batchNum}/${totalBatches}: ${batch.map(s => s.name).join(', ')}`);
       

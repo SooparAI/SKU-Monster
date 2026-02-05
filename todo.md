@@ -104,3 +104,17 @@
 - [x] Fragrance product verification (reject non-fragrance products like TVs)
 - [x] Limit to 5 images per store to focus on main product images
 - [ ] Some stores may rate-limit or block - needs monitoring
+
+## Scraper Expansion to 60+ Stores (New Requirement)
+- [x] Compare existing 20 scrapers with 61 Perplexity stores
+- [x] Update existing scrapers with Perplexity tips (Macy's, Ulta, Paris Gallery)
+- [x] Create optimized scrapers for 55 new stores using parallel agents
+- [x] Integrate Perplexity API for smart SKU lookup
+- [x] Direct URL scraping - scrape exact product URLs from Perplexity instead of blind searching
+- [x] Test expanded scraper system - 10 HQ images from 6 stores in ~60 seconds
+
+## Results Summary
+- **Before**: 1 low-quality image from blind searching 20 stores
+- **After**: 10 HQ images (500x500 to 1080x1080) from direct URL scraping
+- **Speed**: ~60 seconds total (Perplexity lookup + direct scraping + fallback stores)
+- **Sources**: Bonanza, ForeverLux, Jomashop, Gift Express, Fandi Perfume, Luckyscent
