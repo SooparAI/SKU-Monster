@@ -161,7 +161,7 @@ function DashboardLayoutContent({
                 <div className="flex items-center gap-2 min-w-0">
                   <Camera className="h-5 w-5 text-primary shrink-0" />
                   <span className="font-semibold tracking-tight truncate">
-                    Photo.1
+                    SKU Monster
                   </span>
                 </div>
               ) : null}

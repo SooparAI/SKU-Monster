@@ -47,7 +47,7 @@ export default function Login() {
           </div>
           <CardTitle className="text-2xl">Welcome Back</CardTitle>
           <CardDescription>
-            Sign in to your Photo.1 account
+            Sign in to your SKU Monster account
           </CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>

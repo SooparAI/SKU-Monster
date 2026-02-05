@@ -9,6 +9,7 @@ import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import sharp from "sharp";
 import { lookupProductBySku, ProductLookupResult } from "./perplexityLookup";
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
+import { getProxyForPuppeteer } from "./asocksProxy";
 
 // Add stealth plugin to avoid bot detection
 puppeteerExtra.use(StealthPlugin());
@@ -62,21 +63,32 @@ export interface ScrapeJobResult {
 // Browser instance management
 let browserInstance: Browser | null = null;
 
-async function getBrowser(): Promise<Browser> {
+async function getBrowser(useProxy: boolean = false): Promise<Browser> {
   if (!browserInstance || !browserInstance.connected) {
+    const launchArgs = [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+      "--window-size=1920x1080",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=IsolateOrigins,site-per-process",
+    ];
+
+    // Add proxy if available and requested
+    if (useProxy) {
+      const proxy = await getProxyForPuppeteer();
+      if (proxy) {
+        launchArgs.push(`--proxy-server=${proxy.server}`);
+        console.log(`[Browser] Using proxy: ${proxy.server}`);
+      }
+    }
+
     // Use puppeteer-extra with stealth plugin for anti-detection
     browserInstance = await puppeteerExtra.launch({
       headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-accelerated-2d-canvas",
-        "--disable-gpu",
-        "--window-size=1920x1080",
-        "--disable-blink-features=AutomationControlled",
-        "--disable-features=IsolateOrigins,site-per-process",
-      ],
+      args: launchArgs,
     }) as Browser;
   }
   return browserInstance;
@@ -777,8 +789,8 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
 }
 
 // Scrape all stores for a single SKU
-export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
-  const browser = await getBrowser();
+export async function scrapeSku(sku: string, useProxy: boolean = true): Promise<SkuScrapeResult> {
+  const browser = await getBrowser(useProxy);
   const page = await browser.newPage();
 
   await page.setUserAgent(

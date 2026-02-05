@@ -1,4 +1,4 @@
-# Photo.1 - SKU Image Scraper TODO
+# SKU Monster - Product Image Scraper TODO
 
 ## Authentication & User Management
 - [x] User registration and login via OAuth
@@ -121,9 +121,9 @@
 
 
 ## Branding Update
-- [ ] Generate SKU Monster logo
-- [ ] Update app name from Photo.1 to SKU Monster
-- [ ] Update favicon and app logo
+- [x] Generate SKU Monster logo
+- [x] Update app name from Photo.1 to SKU Monster in code
+- [ ] Update favicon and app logo in Settings
 
 
 ## HQ Image Extraction Improvement

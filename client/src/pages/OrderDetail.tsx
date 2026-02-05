@@ -252,7 +252,7 @@ export default function OrderDetail() {
                 <div>
                   <h3 className="font-semibold">Download Ready</h3>
                   <p className="text-sm text-muted-foreground">
-                    Your Photo.1 Output ZIP file is ready for download
+                    Your SKU Monster Output ZIP file is ready for download
                   </p>
                 </div>
               </div>
@@ -261,7 +261,7 @@ export default function OrderDetail() {
                 onClick={() => window.open(order.zipFileUrl!, "_blank")}
               >
                 <Download className="h-4 w-4 mr-2" />
-                Download Photo.1 Output.zip
+                Download SKU Monster Output.zip
               </Button>
             </div>
           </CardContent>
