@@ -60,11 +60,19 @@ export interface ScrapeJobResult {
   failedSkus: number;
 }
 
-// Browser instance management
+// Browser instance management - create new browser for each scrape job to ensure proxy rotation
 let browserInstance: Browser | null = null;
+let browserUsingProxy: boolean = false;
 
-async function getBrowser(useProxy: boolean = false): Promise<Browser> {
-  if (!browserInstance || !browserInstance.connected) {
+async function getBrowser(useProxy: boolean = true): Promise<Browser> {
+  // Always create new browser if proxy setting changed or browser not connected
+  if (!browserInstance || !browserInstance.connected || browserUsingProxy !== useProxy) {
+    // Close existing browser if any
+    if (browserInstance && browserInstance.connected) {
+      await browserInstance.close();
+      browserInstance = null;
+    }
+    
     const launchArgs = [
       "--no-sandbox",
       "--disable-setuid-sandbox",
@@ -81,8 +89,14 @@ async function getBrowser(useProxy: boolean = false): Promise<Browser> {
       const proxy = await getProxyForPuppeteer();
       if (proxy) {
         launchArgs.push(`--proxy-server=${proxy.server}`);
-        console.log(`[Browser] Using proxy: ${proxy.server}`);
+        console.log(`[Browser] 🔒 Using Asocks proxy: ${proxy.server}`);
+        browserUsingProxy = true;
+      } else {
+        console.log(`[Browser] ⚠️ No proxy available, running without proxy`);
+        browserUsingProxy = false;
       }
+    } else {
+      browserUsingProxy = false;
     }
 
     // Use puppeteer-extra with stealth plugin for anti-detection
@@ -90,6 +104,7 @@ async function getBrowser(useProxy: boolean = false): Promise<Browser> {
       headless: true,
       args: launchArgs,
     }) as Browser;
+    console.log(`[Browser] Launched new browser instance (proxy: ${browserUsingProxy})`);
   }
   return browserInstance;
 }

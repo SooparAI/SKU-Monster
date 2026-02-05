@@ -150,3 +150,13 @@
 - **Image 3**: 4320x4320 (11.0 MB) - upscaled from 1080x1080
 - **Total cost**: $0.0012 per SKU (well under $0.03 target!)
 - **All images are correct product**: Bottega Veneta Illusione perfume
+
+
+## Proxy System Improvements
+- [x] Integrated Asocks proxy rotation for anti-bot protection
+- [x] Created 20 US residential proxy ports via Asocks API
+- [x] Updated proxy module to fetch all pages (1,226 total proxies)
+- [x] Implemented US proxy prioritization for US fragrance sites
+- [x] Fixed geo-blocking issues (ERR_EMPTY_RESPONSE) with US proxies
+- [x] Tested successfully with Sephora (200 status, images found)
+- [x] Unit tests for proxy module (5 tests passing)
