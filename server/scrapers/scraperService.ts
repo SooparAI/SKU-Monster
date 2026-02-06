@@ -198,16 +198,43 @@ async function extractAllProductImages(page: Page, store: StoreConfig): Promise<
     } catch { /* Selector not found */ }
   }
   
-  // Strategy 3: Find all large images on the page
+  // Strategy 3: Find all large images on the page - but EXCLUDE recommendation sections
   try {
     const largeImages = await page.evaluate(() => {
+      // Selectors for recommendation/similar items sections to EXCLUDE
+      const excludeSelectors = [
+        '.similar-items', '.similar-products', '.recommended', '.recommendations',
+        '.also-like', '.you-may-like', '.related-products', '.recently-viewed',
+        '.pair-it-with', '.people-also', '.customers-also', '.frequently-bought',
+        '[class*="similar"]', '[class*="recommend"]', '[class*="related"]',
+        '[id*="similar"]', '[id*="recommend"]', '[id*="related"]',
+        '.cross-sell', '.upsell', '.carousel-section', '.product-grid',
+        'footer', 'nav', 'header'
+      ];
+      
       const imgs = Array.from(document.querySelectorAll('img'));
       return imgs
         .filter(img => {
+          // Check if image is inside an excluded section
+          for (const selector of excludeSelectors) {
+            if (img.closest(selector)) {
+              return false;
+            }
+          }
+          
+          // Check if image is in the top portion of the page (main product area)
+          const rect = img.getBoundingClientRect();
+          const scrollY = window.scrollY || window.pageYOffset;
+          const absoluteTop = rect.top + scrollY;
+          
+          // Only include images in the top 1500px of the page (main product area)
+          if (absoluteTop > 1500) {
+            return false;
+          }
+          
           const width = img.naturalWidth || parseInt(img.getAttribute('width') || '0', 10);
           const height = img.naturalHeight || parseInt(img.getAttribute('height') || '0', 10);
           if (width < 200 && height < 200) return false;
-          const rect = img.getBoundingClientRect();
           if (rect.width < 150 && rect.height < 150) return false;
           return true;
         })

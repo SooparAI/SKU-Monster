@@ -168,3 +168,12 @@
 - [x] Solution: Disabled proxy completely (direct connections work better for fragrance sites)
 - [x] Switched from puppeteer-extra to plain puppeteer for reliability
 - [x] Test scrape successful: 3 HQ images found and uploaded to S3
+
+
+## CRITICAL BUG: Wrong Product Images (Feb 5, 2026) - FIXED!
+- [x] Scraper returning wrong product images for SKU 701666410164
+- [x] Expected: Amouage Honour (white bottle with gold cap)
+- [x] Root cause: Scraper was grabbing images from "Similar items" section at bottom of page
+- [x] Fix: Added exclusion filters for recommendation sections (similar-items, recommended, etc.)
+- [x] Fix: Added position filter to only grab images from top 1500px of page (main product area)
+- [x] Verified: Now returns correct Amouage Honour white bottle (3200x3200 upscaled)
