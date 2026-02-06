@@ -524,6 +524,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
         await updateOrderItem(orderItem.id, {
           status: skuResult.status === "partial" ? "completed" : skuResult.status,
           imagesFound: skuResult.images.length,
+          errorMessage: skuResult.errors.length > 0 ? skuResult.errors.join('; ') : null,
           completedAt: new Date(),
         });
 
@@ -543,11 +544,30 @@ async function processScrapeJob(orderId: number, skus: string[]) {
 
     console.log(`Scrape job ${orderId} completed successfully. Total images: ${result.totalImages}, Zip URL: ${result.zipUrl}`);
   } catch (err) {
-    console.error(`Scrape job ${orderId} error:`, err);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`Scrape job ${orderId} error:`, errorMsg, err instanceof Error ? err.stack : '');
+    
+    // Update order status
     await updateOrder(orderId, {
       status: "failed",
       completedAt: new Date(),
     });
+    
+    // Also update all pending/processing order items with the error
+    try {
+      const orderItemsList = await getOrderItems(orderId);
+      for (const item of orderItemsList) {
+        if (item.status === 'pending' || item.status === 'processing') {
+          await updateOrderItem(item.id, {
+            status: 'failed',
+            errorMessage: `Job error: ${errorMsg}`,
+            completedAt: new Date(),
+          });
+        }
+      }
+    } catch (updateErr) {
+      console.error(`Failed to update order items for ${orderId}:`, updateErr);
+    }
   }
 }
 

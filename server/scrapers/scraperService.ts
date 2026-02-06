@@ -137,7 +137,9 @@ async function cleanupOrphanedProcesses(): Promise<void> {
 }
 
 // Run cleanup on module load (server start)
-cleanupOrphanedProcesses();
+try {
+  cleanupOrphanedProcesses();
+} catch { /* ignore cleanup errors on startup */ }
 
 // Timeout wrapper
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
@@ -378,7 +380,14 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
   const needStoreScraping = allImages.length < 3;
   
   if (needStoreScraping) {
-    const browser = await getBrowser();
+    let browser: Browser | null = null;
+    try {
+      browser = await getBrowser();
+    } catch (browserErr) {
+      console.error(`[Browser] Failed to launch: ${browserErr}`);
+      errors.push(`Browser launch failed: ${browserErr instanceof Error ? browserErr.message : String(browserErr)}`);
+    }
+    if (browser) {
     try {
       const stores = getTopStores();
       console.log(`[Scrape] Scraping ${stores.length} top stores for SKU ${sku}...`);
@@ -424,6 +433,7 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     } finally {
       await closeBrowser();
     }
+    } // end if (browser)
   } else {
     console.log(`[UPC] ${allImages.length} images from UPC, skipping stores`);
   }
@@ -476,7 +486,7 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     sku,
     images: finalImages,
     errors,
-    status: finalImages.length > 0 ? "completed" : errors.length > 0 ? "partial" : "failed",
+    status: finalImages.length > 0 ? "completed" : "failed",
   };
 }
 

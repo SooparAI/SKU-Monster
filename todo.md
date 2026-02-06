@@ -234,3 +234,13 @@
 - [x] Changed upscaling from parallel to sequential to avoid Replicate rate limits
 - [x] Reduced retry wait times from 10-20s to 3-6s
 - [x] Verified: 3 HQ images returned with status "completed" (was incorrectly "failed")
+
+## Bug: SKU 701666410164 still showing "Failed to scrape" (Feb 6, 2026 - Session 2)
+- [x] Investigated: Orders 270001/270002 failed in 1 second - likely caused by esbuild error in hqImagePipeline.ts during earlier code edits
+- [x] Added graceful browser launch error handling (scraper degrades when Chrome unavailable)
+- [x] Added error message saving to order items for better debugging
+- [x] Added error propagation from individual SKU results to order items
+- [x] Wrapped module-level cleanup in try-catch to prevent import crashes
+- [x] Fixed status logic: 0 images always returns 'failed' (was returning 'partial' with errors)
+- [x] Verified: Orders 270003 and 270004 both completed successfully with 3 HQ images each
+- [x] Production build verified: `pnpm run build` succeeds without errors
