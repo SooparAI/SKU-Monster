@@ -186,3 +186,23 @@
 - [x] Add store-specific product image selectors (MAIN_PRODUCT_SELECTORS array)
 - [x] Add URL pattern filtering (30+ exclusion patterns for non-product images)
 - [x] Test with SKU 701666410164 - CORRECT Amouage Honour white bottle (4320x4320)
+
+
+## Resource Management - Prevent Stuck Processes (Feb 6, 2026)
+- [ ] Add hard timeout wrapper around entire scrape job
+- [ ] Ensure browser is always closed in finally block
+- [ ] Add process cleanup after each job completion
+- [ ] Implement job-level timeout with automatic failure marking
+- [ ] Add graceful shutdown for long-running operations
+
+
+## MAJOR REFACTOR: Remove AI, Use Programmatic Scraping (Feb 6, 2026) - COMPLETE!
+- [x] Remove Perplexity AI lookup dependency
+- [x] Integrated UPC database lookup (upcitemdb.com) - gets product info + images directly
+- [x] UPC lookup provides: product name, brand, 6 direct image URLs, 7 retailer offers
+- [x] Falls back to store scraping only if UPC database has < 3 images
+- [x] Added SKU verification for store scraping (checks SKU appears on page)
+- [x] Test with SKU 701666410164: CORRECT Amouage Honour white bottle returned!
+- [x] Images: 2009x2009 (original), 4800x4800 (upscaled), 3000x3000 (upscaled)
+- [x] Duration: 90 seconds (vs 3+ minutes with store scraping)
+- [x] Cost: $0.0008 per SKU (vs $0.03+ with AI)

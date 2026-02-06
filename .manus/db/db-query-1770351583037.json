@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, status FROM orders WHERE status IN ('pending', 'processing') ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, status FROM orders WHERE status IN ('pending', 'processing') ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "120003",
+      "status": "processing"
+    },
+    {
+      "id": "3",
+      "status": "processing"
+    },
+    {
+      "id": "2",
+      "status": "processing"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\n120003\tprocessing\n3\tprocessing\n2\tprocessing\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}
