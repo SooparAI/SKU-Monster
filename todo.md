@@ -264,3 +264,13 @@
 - [x] Removed dead sharp import from scraperService.ts
 - [x] sharp is now ONLY dynamically imported in hqImagePipeline.ts with try-catch fallback
 - [x] Verified: Order 270009 completed successfully with 3 HQ images, all 27 tests pass
+
+## Bug: Static puppeteer import still crashes deployed server (Feb 6, 2026 - Session 2d)
+- [x] ROOT CAUSE: Static `import puppeteer from 'puppeteer'` crashes when Chrome binary missing on deployed server
+- [x] Made puppeteer a DYNAMIC import (lazy-loaded only when browser scraping is needed)
+- [x] Added Perplexity AI image search as fallback when UPC returns < 3 images
+- [x] Added direct retailer page fetch (og:image extraction) as another fallback
+- [x] New scrape flow: UPC -> Perplexity -> Retailer Direct -> Browser (optional)
+- [x] Zero static imports of puppeteer or sharp in production build
+- [x] Verified: Orders 270012 and 270013 both completed with 3 HQ images
+- [x] All 27 tests passing, production build clean
