@@ -244,3 +244,16 @@
 - [x] Fixed status logic: 0 images always returns 'failed' (was returning 'partial' with errors)
 - [x] Verified: Orders 270003 and 270004 both completed successfully with 3 HQ images each
 - [x] Production build verified: `pnpm run build` succeeds without errors
+
+## Bug: Chrome not available on deployed server (Feb 6, 2026 - Session 2b)
+- [x] Fix scraper to work without Chrome on deployed server (puppeteer can't find Chrome)
+- [x] Make browser scraping optional - skip entirely when Chrome not available
+- [x] Ensure UPC-only path works end-to-end without any browser dependency
+- [x] Process whatever images UPC returns even if fewer than 3 (don't require browser fallback)
+- [x] Made sharp module optional with dynamic import (fallback to size-only scoring)
+- [x] Fixed URL pre-filter false positive: w=50 was blocking w=500 (Nordstrom URLs)
+- [x] Added fallback: if all images fail scoring, use any downloaded image
+- [x] Added fallback: if pre-filter removes everything, use original URLs
+- [x] Comprehensive logging throughout HQ pipeline for debugging
+- [x] All 27 tests passing, production build succeeds
+- [x] Test scrape: 3 HQ images (2009x2009, 4800x4800, 2000x3068) from UPC + upscaling
