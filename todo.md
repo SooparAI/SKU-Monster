@@ -257,3 +257,10 @@
 - [x] Comprehensive logging throughout HQ pipeline for debugging
 - [x] All 27 tests passing, production build succeeds
 - [x] Test scrape: 3 HQ images (2009x2009, 4800x4800, 2000x3068) from UPC + upscaling
+
+## Bug: Deployed server still failing after fixes (Feb 6, 2026 - Session 2c)
+- [x] Investigated: user DID re-publish, code was running but sharp static import crashed the module
+- [x] ROOT CAUSE: `import sharp from 'sharp'` in scraperService.ts was a dead import (never used) but crashed the module on production because sharp's native binary wasn't available
+- [x] Removed dead sharp import from scraperService.ts
+- [x] sharp is now ONLY dynamically imported in hqImagePipeline.ts with try-catch fallback
+- [x] Verified: Order 270009 completed successfully with 3 HQ images, all 27 tests pass

@@ -7,7 +7,7 @@ import type { Browser, Page } from "puppeteer";
 import { nanoid } from "nanoid";
 import archiver from "archiver";
 import { Writable } from "stream";
-import sharp from "sharp";
+// sharp removed - not used here, handled dynamically in hqImagePipeline.ts
 import { exec } from "child_process";
 import { promisify } from "util";
 
