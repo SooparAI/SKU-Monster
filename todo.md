@@ -177,3 +177,12 @@
 - [x] Fix: Added exclusion filters for recommendation sections (similar-items, recommended, etc.)
 - [x] Fix: Added position filter to only grab images from top 1500px of page (main product area)
 - [x] Verified: Now returns correct Amouage Honour white bottle (3200x3200 upscaled)
+
+
+## Scraper Image Extraction Fix (Programmatic) - COMPLETE!
+- [x] Audit all scraper image extraction logic
+- [x] Add comprehensive exclusion filters for recommendation sections (50+ CSS selectors)
+- [x] Implement main product area detection (position-based, top 1200px only)
+- [x] Add store-specific product image selectors (MAIN_PRODUCT_SELECTORS array)
+- [x] Add URL pattern filtering (30+ exclusion patterns for non-product images)
+- [x] Test with SKU 701666410164 - CORRECT Amouage Honour white bottle (4320x4320)

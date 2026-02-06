@@ -35,17 +35,38 @@ interface HQPipelineResult {
   processingSteps: string[];
 }
 
-// Non-product URL patterns to filter out
+// Non-product URL patterns to filter out (comprehensive list)
 const NON_PRODUCT_PATTERNS = [
-  'logo', 'icon', 'banner', 'badge', 'sprite', 'avatar', 'profile',
-  'social', 'facebook', 'twitter', 'instagram', 'tiktok', 'youtube',
+  // UI elements
+  'logo', 'icon', 'sprite', 'button', 'arrow', 'chevron',
+  'close', 'search', 'menu', 'nav', 'header', 'footer',
+  // Thumbnails and small images
+  'thumb', 'thumbnail', '_xs', '_sm', '_tiny', 'mini',
+  'w=50', 'w=100', 'w=150', 'h=50', 'h=100', 'h=150',
+  '50x50', '100x100', '150x150',
+  // Placeholders and loading
+  'placeholder', 'loading', 'lazy', 'blank', 'empty',
+  'no-image', 'coming-soon', 'out-of-stock', 'sold-out',
+  // Payment/trust icons
   'payment', 'visa', 'mastercard', 'paypal', 'amex', 'klarna', 'tabby',
-  'arrow', 'chevron', 'button', 'nav', 'menu', 'close', 'search',
-  'cart', 'checkout', 'shipping', 'delivery', 'return', 'guarantee',
-  'trust', 'secure', 'ssl', 'certificate', 'rating', 'star', 'review',
-  'placeholder', 'loading', 'lazy', 'pixel', 'tracking', '1x1', 'spacer',
-  'blank', 'empty', 'no-image', 'coming-soon', 'out-of-stock',
-  '_xs', '_sm', '_tiny', '_thumb', 'w=50', 'w=100', 'h=50', 'h=100',
+  'trust', 'secure', 'ssl', 'certificate', 'badge', 'verified',
+  // Social media
+  'social', 'facebook', 'twitter', 'instagram', 'tiktok', 'youtube', 'pinterest',
+  // Tracking/analytics
+  'pixel', 'tracking', '1x1', 'spacer', 'beacon',
+  // Rating/review
+  'star', 'rating', 'review',
+  // Shipping/delivery
+  'shipping', 'delivery', 'return', 'guarantee',
+  // Avatar/profile
+  'avatar', 'profile', 'user',
+  // Banner/promo
+  'banner', 'promo', 'ad-', 'advertisement',
+  // Cart/checkout
+  'cart', 'checkout', 'bag',
+  // Recommendation section indicators in URLs
+  'similar', 'recommend', 'related', 'also-like', 'you-may',
+  'recently-viewed', 'cross-sell', 'upsell',
 ];
 
 // Product-positive URL patterns
