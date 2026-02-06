@@ -206,3 +206,11 @@
 - [x] Images: 2009x2009 (original), 4800x4800 (upscaled), 3000x3000 (upscaled)
 - [x] Duration: 90 seconds (vs 3+ minutes with store scraping)
 - [x] Cost: $0.0008 per SKU (vs $0.03+ with AI)
+
+
+## Pricing Update (Feb 6, 2026) - COMPLETE!
+- [x] Update backend pricing from $15 to $10 per SKU (server/db.ts)
+- [x] Add "(~3 HQ images)" indicator to UI (Home.tsx, TopUp.tsx)
+- [x] Update Stripe product description (server/stripe.ts)
+- [x] Update test files to use $10 pricing
+- [x] All tests passing

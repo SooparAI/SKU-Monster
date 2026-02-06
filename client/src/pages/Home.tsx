@@ -99,17 +99,17 @@ export default function Home() {
       return;
     }
 
-    const totalCost = parsedSkus.length * (balanceData?.pricePerSku || 15);
+    const totalCost = parsedSkus.length * (balanceData?.pricePerSku || 10);
     const balance = balanceData?.balance || 0;
 
-    if (balance < (balanceData?.pricePerSku || 15)) {
+    if (balance < (balanceData?.pricePerSku || 10)) {
       toast.error("Insufficient balance. Please top up to continue.");
       setLocation("/topup");
       return;
     }
 
     if (balance < totalCost) {
-      const affordableSkus = Math.floor(balance / (balanceData?.pricePerSku || 15));
+      const affordableSkus = Math.floor(balance / (balanceData?.pricePerSku || 10));
       toast.warning(
         `You can only process ${affordableSkus} of ${parsedSkus.length} SKUs with your current balance.`
       );
@@ -125,7 +125,7 @@ export default function Home() {
   };
 
   const balance = balanceData?.balance || 0;
-  const pricePerSku = balanceData?.pricePerSku || 15;
+  const pricePerSku = balanceData?.pricePerSku || 10;
   const totalCost = parsedSkus.length * pricePerSku;
   const canAfford = balance >= pricePerSku;
   const affordableSkus = Math.floor(balance / pricePerSku);
@@ -158,7 +158,7 @@ export default function Home() {
                 <DollarSign className="h-4 w-4 mr-2" />
                 Top Up
               </Button>
-              <p className="text-xs text-muted-foreground">${pricePerSku} per SKU</p>
+              <p className="text-xs text-muted-foreground">${pricePerSku} per SKU (~3 HQ images)</p>
             </div>
           </div>
         </CardContent>
@@ -271,7 +271,7 @@ export default function Home() {
                 <span>{parsedSkus.length}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Price per SKU</span>
+                <span className="text-muted-foreground">Price per SKU (~3 HQ images)</span>
                 <span>${pricePerSku.toFixed(2)}</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-medium">

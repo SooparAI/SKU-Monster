@@ -29,7 +29,7 @@ vi.mock("./db", () => ({
     status: "completed",
     totalSkus: 1,
     processedSkus: 1,
-    totalCost: "15.00",
+    totalCost: "10.00",
     chargedAmount: "15.00",
     createdAt: new Date(),
   }),
@@ -40,7 +40,7 @@ vi.mock("./db", () => ({
       status: "completed",
       totalSkus: 1,
       processedSkus: 1,
-      totalCost: "15.00",
+      totalCost: "10.00",
       chargedAmount: "15.00",
       createdAt: new Date(),
     },
@@ -57,7 +57,7 @@ vi.mock("./db", () => ({
     },
   ]),
   saveScrapedImages: vi.fn().mockResolvedValue(undefined),
-  SKU_PRICE: 15,
+  SKU_PRICE: 10,
 }));
 
 // Mock the scraper service
@@ -145,7 +145,7 @@ describe("balance router", () => {
 
     expect(result).toEqual({
       balance: 100,
-      pricePerSku: 15,
+      pricePerSku: 10,
     });
   });
 
@@ -200,7 +200,7 @@ describe("orders router", () => {
 
     expect(result.skus).toContain("701666410164");
     expect(result.skus).toContain("3770006409028");
-    expect(result.pricePerSku).toBe(15);
+    expect(result.pricePerSku).toBe(10);
   });
 
   it("returns user orders list", async () => {

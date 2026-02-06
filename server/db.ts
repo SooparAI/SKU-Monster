@@ -334,4 +334,4 @@ export async function upsertStore(data: InsertStore): Promise<void> {
 }
 
 // Pricing constant
-export const SKU_PRICE = 15; // $15 per SKU
+export const SKU_PRICE = 10; // $10 per SKU (~3 HQ images)

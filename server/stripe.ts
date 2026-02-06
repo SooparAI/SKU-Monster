@@ -9,8 +9,8 @@ export const stripe = new Stripe(ENV.stripeSecretKey || "", {
 // Product configuration for balance top-ups
 export const TOPUP_PRODUCTS = {
   topup: {
-    name: "Balance Top-Up",
-    description: "Add funds to your Photo.1 account",
+    name: "SKU Monster Balance Top-Up",
+    description: "Add funds to your SKU Monster account ($10 per SKU, ~3 HQ images)",
   },
 };
 
@@ -35,7 +35,7 @@ export async function createTopupCheckoutSession(params: {
           currency: "usd",
           product_data: {
             name: TOPUP_PRODUCTS.topup.name,
-            description: `$${amount.toFixed(2)} balance top-up for Photo.1 Image Scraper`,
+            description: `$${amount.toFixed(2)} balance top-up for SKU Monster ($10/SKU, ~3 HQ images)`,
           },
           unit_amount: amountInCents,
         },

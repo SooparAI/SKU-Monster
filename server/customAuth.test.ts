@@ -51,7 +51,7 @@ vi.mock("./db", () => ({
   updateOrderItem: vi.fn().mockResolvedValue(undefined),
   getOrderItems: vi.fn().mockResolvedValue([]),
   saveScrapedImages: vi.fn().mockResolvedValue(undefined),
-  SKU_PRICE: 15,
+  SKU_PRICE: 10,
 }));
 
 // Mock scraper service

@@ -135,9 +135,9 @@ export default function TopUp() {
   const handleCustomAmountChange = (value: string) => {
     setCustomAmount(value);
     const parsed = parseFloat(value);
-    if (!isNaN(parsed) && parsed >= 15) {
-      // Calculate credits based on $15/SKU
-      const credits = Math.floor(parsed / 15);
+    if (!isNaN(parsed) && parsed >= 10) {
+      // Calculate credits based on $10/SKU
+      const credits = Math.floor(parsed / 10);
       setSelectedTier({ credits, price: parsed });
     }
   };
@@ -182,7 +182,7 @@ export default function TopUp() {
   };
 
   const balance = balanceData?.balance || 0;
-  const skusAffordable = Math.floor((balance + selectedTier.price) / (balanceData?.pricePerSku || 15));
+  const skusAffordable = Math.floor((balance + selectedTier.price) / (balanceData?.pricePerSku || 10));
 
   // Show success state
   if (isSuccess && sessionId) {
@@ -278,7 +278,7 @@ export default function TopUp() {
                   onChange={(e) => handleCustomAmountChange(e.target.value)}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">$15 per SKU credit</p>
+              <p className="text-xs text-muted-foreground">$10 per SKU (~3 HQ images)</p>
             </div>
 
             {/* Payment Method */}
