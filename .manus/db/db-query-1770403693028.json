@@ -1,0 +1,75 @@
+{
+  "query": "SELECT o.id, o.status, o.totalSkus, o.processedSkus, o.totalCost, o.zipFileUrl, o.createdAt, o.completedAt, oi.sku, oi.status as itemStatus, oi.errorMessage FROM orders o LEFT JOIN orderItems oi ON o.id = oi.orderId WHERE o.id >= 240000 ORDER BY o.id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT o.id, o.status, o.totalSkus, o.processedSkus, o.totalCost, o.zipFileUrl, o.createdAt, o.completedAt, oi.sku, oi.status as itemStatus, oi.errorMessage FROM orders o LEFT JOIN orderItems oi ON o.id = oi.orderId WHERE o.id >= 240000 ORDER BY o.id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "270001",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270001/Photo.1_Output_ekDSzaCM.zip",
+      "createdAt": "2026-02-06 18:44:43",
+      "completedAt": "2026-02-06 18:44:44",
+      "sku": "701666410164",
+      "itemStatus": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "240004",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240004/Photo.1_Output_MG5J0csT.zip",
+      "createdAt": "2026-02-06 07:23:21",
+      "completedAt": "2026-02-06 07:26:44",
+      "sku": "3770006409028",
+      "itemStatus": "completed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "240003",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240003/Photo.1_Output_lgw8knWy.zip",
+      "createdAt": "2026-02-06 05:32:42",
+      "completedAt": "2026-02-06 05:33:56",
+      "sku": "701666410164",
+      "itemStatus": "completed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "240002",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240002/Photo.1_Output_kNu8_CE-.zip",
+      "createdAt": "2026-02-06 05:30:23",
+      "completedAt": "2026-02-06 05:30:24",
+      "sku": "701666410164",
+      "itemStatus": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "240001",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "15.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240001/Photo.1_Output_w9lC33g6.zip",
+      "createdAt": "2026-02-06 05:29:55",
+      "completedAt": "2026-02-06 05:29:57",
+      "sku": "701666410164",
+      "itemStatus": "failed",
+      "errorMessage": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tzipFileUrl\tcreatedAt\tcompletedAt\tsku\titemStatus\terrorMessage\n270001\tfailed\t1\t1\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270001/Photo.1_Output_ekDSzaCM.zip\t2026-02-06 18:44:43\t2026-02-06 18:44:44\t701666410164\tfailed\tNULL\n240004\tcompleted\t1\t1\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240004/Photo.1_Output_MG5J0csT.zip\t2026-02-06 07:23:21\t2026-02-06 07:26:44\t3770006409028\tcompleted\tNULL\n240003\tcompleted\t1\t1\t15.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240003/Photo.1_Output_lgw8knWy.zip\t2026-02-06 05:32:42\t2026-02-06 05:33:56\t701666410164\tcompleted\tNULL\n240002\tfailed\t1\t1\t15.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240002/Photo.1_Output_kNu8_CE-.zip\t2026-02-06 05:30:23\t2026-02-06 05:30:24\t701666410164\tfailed\tNULL\n240001\tfailed\t1\t1\t15.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/240001/Photo.1_Output_w9lC33g6.zip\t2026-02-06 05:29:55\t2026-02-06 05:29:57\t701666410164\tfailed\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 52
+}

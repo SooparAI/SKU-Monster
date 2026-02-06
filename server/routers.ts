@@ -446,7 +446,7 @@ export const appRouter = router({
 
         // Get the order items that need to be processed
         const items = await getOrderItems(input.orderId);
-        const pendingItems = items.filter((item) => item.status === "pending" || item.status === "processing");
+        const pendingItems = items.filter((item) => item.status === "pending" || item.status === "processing" || item.status === "failed");
         const skusToProcess = pendingItems.map((item) => item.sku);
 
         if (skusToProcess.length === 0) {
@@ -459,12 +459,13 @@ export const appRouter = router({
           processedSkus: 0,
         });
 
-        // Reset order items
+        // Reset order items (including failed ones)
         for (const item of pendingItems) {
           await updateOrderItem(item.id, {
             status: "pending",
             imagesFound: 0,
             errorMessage: null,
+            completedAt: null,
           });
         }
 

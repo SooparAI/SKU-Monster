@@ -226,3 +226,11 @@
 - [x] Reduced store count from 54 to top 12 most reliable
 - [x] Added retry logic for rate-limited upscale requests (3 retries with backoff)
 - [x] UPC lookup skips stores entirely when enough images found
+
+
+## Bug Fixes: Image Mapping & Retry (Feb 6, 2026)
+- [x] Fixed broken image index mapping in scrapeSku (was mapping wrong indices between HQ pipeline and uniqueImages)
+- [x] Fixed retry logic to include failed items (was only retrying pending/processing, now includes failed)
+- [x] Changed upscaling from parallel to sequential to avoid Replicate rate limits
+- [x] Reduced retry wait times from 10-20s to 3-6s
+- [x] Verified: 3 HQ images returned with status "completed" (was incorrectly "failed")

@@ -150,12 +150,12 @@ async function scoreImage(imageUrl: string): Promise<{
 async function upscaleImage(imageUrl: string, scale: number = 4): Promise<string | null> {
   if (!REPLICATE_API_TOKEN) return null;
   
-  const MAX_RETRIES = 3;
+  const MAX_RETRIES = 2;
   
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       if (attempt > 0) {
-        const waitTime = 10000 + attempt * 5000; // 10s, 15s, 20s
+        const waitTime = 3000 + attempt * 3000; // 3s, 6s
         console.log(`[Upscale] Retry ${attempt}/${MAX_RETRIES}, waiting ${waitTime/1000}s...`);
         await new Promise(r => setTimeout(r, waitTime));
       }
@@ -303,17 +303,16 @@ export async function processImagesHQ(
     });
   }
   
-  // Step 4: Upscale images IN PARALLEL
+  // Step 4: Upscale images SEQUENTIALLY to avoid rate limits
   if (needUpscale.length > 0 && REPLICATE_API_TOKEN) {
-    result.processingSteps.push(`Upscaling ${needUpscale.length} images in parallel...`);
-    console.log(`[HQ Pipeline] Upscaling ${needUpscale.length} images in parallel...`);
+    result.processingSteps.push(`Upscaling ${needUpscale.length} images...`);
+    console.log(`[HQ Pipeline] Upscaling ${needUpscale.length} images sequentially...`);
     
-    const upscaleResults = await Promise.all(
-      needUpscale.map(async (img) => {
-        const upscaledUrl = await upscaleImage(img.url, 4);
-        return { img, upscaledUrl };
-      })
-    );
+    const upscaleResults: { img: typeof needUpscale[0]; upscaledUrl: string | null }[] = [];
+    for (const img of needUpscale) {
+      const upscaledUrl = await upscaleImage(img.url, 4);
+      upscaleResults.push({ img, upscaledUrl });
+    }
     
     // Process upscaled results in parallel too
     const processedUpscales = await Promise.all(

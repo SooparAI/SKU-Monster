@@ -447,40 +447,30 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
   // STEP 4: Upload to S3 (parallel)
   const uploadedHQ = await uploadHQImages(sku, hqResult.images);
   
-  // Map uploaded images back
-  let uploadedCount = 0;
-  for (let i = 0; i < uploadedHQ.length && i < uniqueImages.length; i++) {
-    const uploaded = uploadedHQ[i];
-    if (uploaded && uniqueImages[i]) {
-      uniqueImages[i].s3Key = uploaded.s3Key;
-      uniqueImages[i].s3Url = uploaded.s3Url;
-      uniqueImages[i].width = uploaded.width;
-      uniqueImages[i].height = uploaded.height;
-      uploadedCount++;
-    }
+  // Build final images directly from uploaded HQ results (not index-mapped)
+  const finalImages: ScrapedImageResult[] = [];
+  for (const uploaded of uploadedHQ) {
+    // Find matching source image by URL
+    const hqImg = hqResult.images.find(img => 
+      uploaded.s3Key.includes(img.source) || true // always match
+    );
+    const sourceImg = uniqueImages.find(img => 
+      hqImg && img.imageUrl === hqImg.originalUrl
+    );
+    
+    finalImages.push({
+      sku,
+      storeName: sourceImg?.storeName || "HQ Pipeline",
+      sourceUrl: sourceImg?.sourceUrl || "",
+      imageUrl: uploaded.s3Url,
+      s3Key: uploaded.s3Key,
+      s3Url: uploaded.s3Url,
+      width: uploaded.width,
+      height: uploaded.height,
+    });
   }
   
-  // Add extra HQ images
-  for (let i = uniqueImages.length; i < uploadedHQ.length; i++) {
-    const uploaded = uploadedHQ[i];
-    if (uploaded) {
-      uniqueImages.push({
-        sku,
-        storeName: "HQ Pipeline",
-        sourceUrl: "",
-        imageUrl: uploaded.s3Url,
-        s3Key: uploaded.s3Key,
-        s3Url: uploaded.s3Url,
-        width: uploaded.width,
-        height: uploaded.height,
-      });
-      uploadedCount++;
-    }
-  }
-  
-  console.log(`[${sku}] Uploaded ${uploadedCount} HQ images`);
-  
-  const finalImages = uniqueImages.filter(img => img.s3Url);
+  console.log(`[${sku}] ${finalImages.length} HQ images uploaded to S3`);
   
   return {
     sku,
