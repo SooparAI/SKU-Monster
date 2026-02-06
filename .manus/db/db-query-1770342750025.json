@@ -1,0 +1,100 @@
+{
+  "query": "SELECT o.id, o.status, o.totalSkus, o.processedSkus, oi.sku, oi.status as item_status, oi.errorMessage \nFROM orders o \nLEFT JOIN orderItems oi ON o.id = oi.orderId \nWHERE o.status = 'failed' \nORDER BY o.id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT o.id, o.status, o.totalSkus, o.processedSkus, oi.sku, oi.status as item_status, oi.errorMessage \nFROM orders o \nLEFT JOIN orderItems oi ON o.id = oi.orderId \nWHERE o.status = 'failed' \nORDER BY o.id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "180001",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "sku": "701666410164",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "150001",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "sku": "701666410164",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "120005",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "sku": "3614225621932",
+      "item_status": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "120004",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "sku": "3614225621932",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "90001",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "sku": "3614225621932",
+      "item_status": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "30007",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "sku": "3614225621932",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "30006",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "sku": "701666410164",
+      "item_status": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "30003",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "sku": "3614225621932",
+      "item_status": "failed",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "6",
+      "status": "failed",
+      "totalSkus": "2",
+      "processedSkus": "0",
+      "sku": "701666410164",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    },
+    {
+      "id": "6",
+      "status": "failed",
+      "totalSkus": "2",
+      "processedSkus": "0",
+      "sku": "3770006409028",
+      "item_status": "pending",
+      "errorMessage": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalSkus\tprocessedSkus\tsku\titem_status\terrorMessage\n180001\tfailed\t1\t0\t701666410164\tpending\tNULL\n150001\tfailed\t1\t0\t701666410164\tpending\tNULL\n120005\tfailed\t1\t1\t3614225621932\tfailed\tNULL\n120004\tfailed\t1\t0\t3614225621932\tpending\tNULL\n90001\tfailed\t1\t1\t3614225621932\tfailed\tNULL\n30007\tfailed\t1\t0\t3614225621932\tpending\tNULL\n30006\tfailed\t1\t1\t701666410164\tfailed\tNULL\n30003\tfailed\t1\t1\t3614225621932\tfailed\tNULL\n6\tfailed\t2\t0\t701666410164\tpending\tNULL\n6\tfailed\t2\t0\t3770006409028\tpending\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 111
+}

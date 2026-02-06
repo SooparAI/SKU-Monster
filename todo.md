@@ -160,3 +160,11 @@
 - [x] Fixed geo-blocking issues (ERR_EMPTY_RESPONSE) with US proxies
 - [x] Tested successfully with Sephora (200 status, images found)
 - [x] Unit tests for proxy module (5 tests passing)
+
+
+## Proxy Bug Fix (Feb 5, 2026)
+- [x] Fixed ERR_INVALID_AUTH_CREDENTIALS error causing all scrapes to fail
+- [x] Root cause: puppeteer-extra was caching proxy credentials between runs
+- [x] Solution: Disabled proxy completely (direct connections work better for fragrance sites)
+- [x] Switched from puppeteer-extra to plain puppeteer for reliability
+- [x] Test scrape successful: 3 HQ images found and uploaded to S3

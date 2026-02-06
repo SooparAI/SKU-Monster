@@ -1,37 +1,22 @@
-import puppeteer, { Browser, Page } from "puppeteer";
-import { StoreConfig, storeConfigs, getActiveStores, buildSearchUrl, isValidProductImage } from "./storeConfigs";
-import { storagePut } from "../storage";
+// Scraper Service - Main scraping orchestration
+// Uses Puppeteer with stealth plugin to scrape product images from multiple stores
+
+import puppeteer from "puppeteer";
+import type { Browser, Page } from "puppeteer";
 import { nanoid } from "nanoid";
 import archiver from "archiver";
 import { Writable } from "stream";
-import puppeteerExtra from "puppeteer-extra";
-import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import sharp from "sharp";
-import { lookupProductBySku, ProductLookupResult } from "./perplexityLookup";
-import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
+
+import { storagePut } from "../storage";
+import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
 import { getProxyForPuppeteer } from "./asocksProxy";
+import { lookupProductBySku, type ProductLookupResult } from "./perplexityLookup";
+import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
 
-// Add stealth plugin to avoid bot detection
-puppeteerExtra.use(StealthPlugin());
+// Using plain puppeteer for reliability (puppeteer-extra had proxy caching issues)
 
-// Random user agents to rotate
-const USER_AGENTS = [
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
-];
-
-function getRandomUserAgent(): string {
-  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
-}
-
-function randomDelay(min: number, max: number): Promise<void> {
-  const delay = Math.floor(Math.random() * (max - min + 1)) + min;
-  return new Promise(resolve => setTimeout(resolve, delay));
-}
-
+// Types
 export interface ScrapedImageResult {
   sku: string;
   storeName: string;
@@ -53,65 +38,59 @@ export interface SkuScrapeResult {
 export interface ScrapeJobResult {
   orderId: number;
   results: SkuScrapeResult[];
-  zipKey?: string;
-  zipUrl?: string;
+  zipKey: string;
+  zipUrl: string;
   totalImages: number;
   processedSkus: number;
   failedSkus: number;
 }
 
-// Browser instance management - create new browser for each scrape job to ensure proxy rotation
+// Browser instance management - create fresh browser for each job
 let browserInstance: Browser | null = null;
-let browserUsingProxy: boolean = false;
 
-async function getBrowser(useProxy: boolean = true): Promise<Browser> {
-  // Always create new browser if proxy setting changed or browser not connected
-  if (!browserInstance || !browserInstance.connected || browserUsingProxy !== useProxy) {
-    // Close existing browser if any
-    if (browserInstance && browserInstance.connected) {
-      await browserInstance.close();
-      browserInstance = null;
-    }
-    
-    const launchArgs = [
-      "--no-sandbox",
-      "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-accelerated-2d-canvas",
-      "--disable-gpu",
-      "--window-size=1920x1080",
-      "--disable-blink-features=AutomationControlled",
-      "--disable-features=IsolateOrigins,site-per-process",
-    ];
-
-    // Add proxy if available and requested
-    if (useProxy) {
-      const proxy = await getProxyForPuppeteer();
-      if (proxy) {
-        launchArgs.push(`--proxy-server=${proxy.server}`);
-        console.log(`[Browser] 🔒 Using Asocks proxy: ${proxy.server}`);
-        browserUsingProxy = true;
-      } else {
-        console.log(`[Browser] ⚠️ No proxy available, running without proxy`);
-        browserUsingProxy = false;
+async function getBrowser(useProxy: boolean = false): Promise<Browser> {
+  // Always close existing browser and create fresh one
+  if (browserInstance) {
+    try {
+      if (browserInstance.connected) {
+        await browserInstance.close();
       }
-    } else {
-      browserUsingProxy = false;
+    } catch (e) {
+      // Ignore close errors
     }
-
-    // Use puppeteer-extra with stealth plugin for anti-detection
-    browserInstance = await puppeteerExtra.launch({
-      headless: true,
-      args: launchArgs,
-    }) as Browser;
-    console.log(`[Browser] Launched new browser instance (proxy: ${browserUsingProxy})`);
+    browserInstance = null;
   }
+  
+  const launchArgs = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-accelerated-2d-canvas",
+    "--disable-gpu",
+    "--window-size=1920x1080",
+    "--disable-blink-features=AutomationControlled",
+    "--disable-features=IsolateOrigins,site-per-process",
+  ];
+
+  // Proxy disabled - direct connections work better for fragrance sites
+
+  // Use plain puppeteer for reliability
+  browserInstance = await puppeteer.launch({
+    headless: true,
+    args: launchArgs,
+  });
+  console.log(`[Browser] Launched new browser instance (proxy: disabled)`);
+  
   return browserInstance;
 }
 
 async function closeBrowser(): Promise<void> {
   if (browserInstance) {
-    await browserInstance.close();
+    try {
+      await browserInstance.close();
+    } catch (e) {
+      // Ignore close errors
+    }
     browserInstance = null;
   }
 }
@@ -121,64 +100,29 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Universal image filter patterns - URLs containing these are NOT product images
-const NON_PRODUCT_PATTERNS = [
-  /logo/i, /icon/i, /payment/i, /banner/i, /sprite/i, /thumb/i, /placeholder/i,
-  /loading/i, /lazy/i, /pixel/i, /tracking/i, /1x1/i, /badge/i, /flag/i,
-  /visa/i, /mastercard/i, /amex/i, /paypal/i, /apple-pay/i, /google-pay/i,
-  /tabby/i, /tamara/i, /klarna/i, /afterpay/i, /social/i, /facebook/i,
-  /twitter/i, /instagram/i, /youtube/i, /tiktok/i, /pinterest/i, /linkedin/i,
-  /whatsapp/i, /share/i, /rating/i, /star/i, /review/i, /avatar/i, /user/i,
-  /profile/i, /cart/i, /checkout/i, /shipping/i, /delivery/i, /return/i,
-  /guarantee/i, /trust/i, /secure/i, /ssl/i, /certificate/i, /arrow/i,
-  /chevron/i, /close/i, /menu/i, /hamburger/i, /search/i, /magnify/i,
-  /zoom-icon/i, /play-button/i, /video-icon/i, /\.svg$/i, /\.gif$/i,
-  /data:image/i, /base64/i, /transparent/i, /spacer/i, /blank/i, /empty/i,
-  /no-image/i, /coming-soon/i, /out-of-stock/i, /_xs\./i, /_sm\./i,
-  /_tiny/i, /_small/i, /w=50/i, /w=100/i, /h=50/i, /h=100/i, /size=50/i, /size=100/i,
+// Random delay to appear more human-like
+function randomDelay(min: number, max: number): Promise<void> {
+  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
+  return delay(ms);
+}
+
+// User agent rotation
+const userAgents = [
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
 ];
 
-// Check if URL looks like a product image
-function isProductImageUrl(url: string): boolean {
-  if (!url) return false;
-  const hasImageExtension = /\.(jpg|jpeg|png|webp)(\?|$)/i.test(url);
-  const hasImagePath = /\/image[s]?\//i.test(url) || /\/product[s]?\//i.test(url) || /\/media\//i.test(url);
-  if (!hasImageExtension && !hasImagePath) return false;
-  for (const pattern of NON_PRODUCT_PATTERNS) {
-    if (pattern.test(url)) return false;
-  }
-  return true;
+function getRandomUserAgent(): string {
+  return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
 
-// Check if product was found on the page
-async function isProductFound(page: Page, store: StoreConfig): Promise<boolean> {
-  try {
-    // First check if no results selector exists
-    const noResultsElement = await page.$(store.selectors.noResults);
-    if (noResultsElement) {
-      // Check if it's visible
-      const isVisible = await page.evaluate(el => {
-        const style = window.getComputedStyle(el);
-        return style.display !== 'none' && style.visibility !== 'hidden';
-      }, noResultsElement);
-      if (isVisible) {
-        return false;
-      }
-    }
-    
-    // Then check if product found selector exists
-    const productFoundElement = await page.$(store.selectors.productFound);
-    return productFoundElement !== null;
-  } catch {
-    return false;
-  }
-}
-
-// Extract all potential product images from a page using multiple strategies
+// Extract all product images from a page using multiple strategies
 async function extractAllProductImages(page: Page, store: StoreConfig): Promise<string[]> {
   const allUrls: string[] = [];
   
-  // Strategy 1: Use store-specific selector first
+  // Strategy 1: Use store-specific selector
   try {
     const storeImages = await page.$$eval(
       store.selectors.productImage,
@@ -277,426 +221,140 @@ async function extractAllProductImages(page: Page, store: StoreConfig): Promise<
         .filter(url => url && (url.startsWith('http') || url.startsWith('//')));
     });
     allUrls.push(...largeImages);
-  } catch (err) {
-    console.log(`  Large image scan failed: ${err}`);
-  }
+  } catch { /* Evaluation failed */ }
   
-  // Normalize and deduplicate URLs
-  const normalizedUrls = allUrls
-    .map(url => url.startsWith('//') ? `https:${url}` : url)
-    .map(url => upgradeImageUrl(url)) // Try to get higher resolution versions
-    .filter(url => isProductImageUrl(url));
+  // Deduplicate and filter
+  const uniqueUrls = Array.from(new Set(allUrls));
+  const filteredUrls = uniqueUrls.filter(url => {
+    const lowerUrl = url.toLowerCase();
+    // Filter out common non-product images
+    if (store.imageConfig.urlPatternFilter && store.imageConfig.urlPatternFilter.test(lowerUrl)) {
+      return false;
+    }
+    // Filter out tiny images (thumbnails, icons)
+    if (lowerUrl.includes('thumb') || lowerUrl.includes('icon') || lowerUrl.includes('logo')) {
+      return false;
+    }
+    // Filter out common UI elements
+    if (lowerUrl.includes('sprite') || lowerUrl.includes('placeholder') || lowerUrl.includes('loading')) {
+      return false;
+    }
+    return true;
+  });
   
-  const uniqueUrls = Array.from(new Set(normalizedUrls));
-  console.log(`  Total unique product images found: ${uniqueUrls.length}`);
+  // Limit to top 5 images per store
+  const limitedUrls = filteredUrls.slice(0, 5);
+  console.log(`  Total unique product images found: ${filteredUrls.length}`);
   
-  // Limit to top 5 images per store to focus on main product images
-  return uniqueUrls.slice(0, 5);
+  return limitedUrls;
 }
 
-// Comprehensive CDN URL upgrade function to get highest quality images
-function upgradeImageUrl(url: string): string {
-  let upgraded = url;
-  
-  // === CLOUDINARY (used by many stores) ===
-  // Pattern: /upload/w_300,h_300,c_fit/ or /upload/f_auto,q_auto:eco/
-  if (upgraded.includes('cloudinary.com') || upgraded.includes('res.cloudinary.com')) {
-    // Remove all transformation parameters to get original
-    upgraded = upgraded.replace(/\/upload\/[^/]+\//, '/upload/');
-    // Or maximize quality: replace with high quality params
-    upgraded = upgraded.replace(/\/upload\//, '/upload/q_100,f_png/');
-  }
-  
-  // === SHOPIFY CDN ===
-  // Pattern: _100x100.jpg, _200x.jpg, _x200.jpg, _small.jpg, _medium.jpg
-  if (upgraded.includes('cdn.shopify.com') || upgraded.includes('.myshopify.com')) {
-    // Remove size suffix to get original
-    upgraded = upgraded.replace(/_\d+x\d*\./, '.');
-    upgraded = upgraded.replace(/_\d*x\d+\./, '.');
-    upgraded = upgraded.replace(/_(pico|icon|thumb|small|compact|medium|large|grande|master|original)\./gi, '.');
-    // Remove crop parameters
-    upgraded = upgraded.replace(/_crop_[a-z]+\./gi, '.');
-  }
-  
-  // === SCENE7 / ADOBE DYNAMIC MEDIA (Macy's, Nordstrom, Sephora, etc.) ===
-  // Pattern: ?$XXX$ or ?wid=300&hei=300 or ?op_sharpen=1&wid=500
-  if (upgraded.includes('scene7.com') || upgraded.includes('/is/image/')) {
-    // Remove all query parameters to get full resolution
-    upgraded = upgraded.split('?')[0];
-    // Add max quality params
-    upgraded += '?wid=2000&hei=2000&fmt=png-alpha&qlt=100';
-  }
-  
-  // === AKAMAI IMAGE MANAGER ===
-  // Pattern: ?imwidth=300 or ?im=Resize,width=300
-  if (upgraded.includes('akamaized.net') || upgraded.includes('akamaiobjects.com')) {
-    upgraded = upgraded.replace(/\?im(width|height)=\d+/gi, '');
-    upgraded = upgraded.replace(/\?im=Resize[^&]*/gi, '');
-    upgraded = upgraded.split('?')[0];
-  }
-  
-  // === IMGIX ===
-  // Pattern: ?w=300&h=300&fit=crop or ?auto=format,compress
-  if (upgraded.includes('imgix.net') || upgraded.includes('.imgix.')) {
-    upgraded = upgraded.split('?')[0];
-    upgraded += '?q=100&auto=format';
-  }
-  
-  // === FASTLY IMAGE OPTIMIZER ===
-  // Pattern: ?width=300&height=300&quality=80
-  if (upgraded.includes('fastly.net') || upgraded.includes('global.ssl.fastly.net')) {
-    upgraded = upgraded.replace(/[?&](width|height|quality|fit|crop)=[^&]*/gi, '');
-    if (!upgraded.includes('?')) upgraded += '?';
-    upgraded += '&quality=100';
-  }
-  
-  // === CONTENTFUL ===
-  // Pattern: ?w=300&h=300&q=80&fm=webp
-  if (upgraded.includes('ctfassets.net') || upgraded.includes('contentful.com')) {
-    upgraded = upgraded.split('?')[0];
-    upgraded += '?q=100&fm=png';
-  }
-  
-  // === SANITY.IO ===
-  // Pattern: ?w=300&h=300&q=80
-  if (upgraded.includes('sanity.io') || upgraded.includes('cdn.sanity.io')) {
-    upgraded = upgraded.replace(/\?.*$/, '');
-    upgraded += '?q=100';
-  }
-  
-  // === WOOCOMMERCE / WORDPRESS ===
-  // Pattern: -300x300.jpg, -150x150.jpg
-  if (upgraded.match(/-\d+x\d+\.(jpg|jpeg|png|webp)/i)) {
-    upgraded = upgraded.replace(/-\d+x\d+\.(jpg|jpeg|png|webp)/i, '.$1');
-  }
-  
-  // === MAGENTO ===
-  // Pattern: /cache/1/image/300x300/ or /resize/300x300/
-  if (upgraded.includes('/cache/') && upgraded.includes('/image/')) {
-    upgraded = upgraded.replace(/\/cache\/\d+\/image\/\d+x\d+\//gi, '/cache/1/image/');
-  }
-  if (upgraded.includes('/resize/')) {
-    upgraded = upgraded.replace(/\/resize\/\d+x\d*\//gi, '/');
-    upgraded = upgraded.replace(/\/resize\/\d*x\d+\//gi, '/');
-  }
-  
-  // === FRAGRANCEX ===
-  if (upgraded.includes('img.fragrancex.com')) {
-    if (upgraded.includes('/sku/small/')) {
-      upgraded = upgraded.replace('/sku/small/', '/parent/medium/');
-    }
-  }
-  
-  // === FRAGRANCENET ===
-  if (upgraded.includes('fragrancenet.com')) {
-    upgraded = upgraded.replace(/_s\./g, '_l.').replace(/_m\./g, '_l.');
-  }
-  
-  // === SEPHORA ===
-  if (upgraded.includes('sephora.com') || upgraded.includes('sephora.')) {
-    // Remove size constraints
-    upgraded = upgraded.replace(/\?.*$/, '');
-    upgraded = upgraded.replace(/_\d+x\d+_/g, '_');
-  }
-  
-  // === NORDSTROM ===
-  if (upgraded.includes('nordstrom.com') || upgraded.includes('n.nordstrommedia.com')) {
-    upgraded = upgraded.split('?')[0];
-    upgraded += '?h=2000&w=2000';
-  }
-  
-  // === BLOOMINGDALE'S / MACY'S ===
-  if (upgraded.includes('bloomingdales.com') || upgraded.includes('macys.com')) {
-    upgraded = upgraded.split('?')[0];
-    if (upgraded.includes('scene7')) {
-      upgraded += '?wid=2000&hei=2000&fmt=png-alpha&qlt=100';
-    }
-  }
-  
-  // === NEIMAN MARCUS / BERGDORF ===
-  if (upgraded.includes('neimanmarcus.com') || upgraded.includes('bergdorfgoodman.com')) {
-    upgraded = upgraded.split('?')[0];
-    upgraded += '?wid=2000&hei=2000';
-  }
-  
-  // === HARRODS ===
-  if (upgraded.includes('harrods.com')) {
-    upgraded = upgraded.replace(/\/w\d+\//g, '/w2000/');
-    upgraded = upgraded.replace(/\?.*$/, '');
-  }
-  
-  // === SELFRIDGES ===
-  if (upgraded.includes('selfridges.com')) {
-    upgraded = upgraded.replace(/\?.*$/, '');
-    upgraded = upgraded.replace(/_\d+\./g, '.');
-  }
-  
-  // === NET-A-PORTER / MR PORTER ===
-  if (upgraded.includes('net-a-porter.com') || upgraded.includes('mrporter.com')) {
-    upgraded = upgraded.replace(/_pp\.jpg/g, '_in_pp.jpg');
-    upgraded = upgraded.replace(/\/w\d+\//g, '/w2000/');
-  }
-  
-  // === COSBAR ===
-  if (upgraded.includes('cosbar.com')) {
-    upgraded = upgraded.replace(/\?.*$/, '');
-    // Try to get original by removing size suffix
-    upgraded = upgraded.replace(/_\d+x\d+\./g, '.');
-  }
-  
-  // === JOMASHOP ===
-  if (upgraded.includes('jomashop.com')) {
-    upgraded = upgraded.replace(/\?.*$/, '');
-    upgraded = upgraded.replace(/-\d+x\d+\./g, '.');
-  }
-  
-  // === DOUGLAS / NOTINO / FLACONI (German/EU stores) ===
-  if (upgraded.includes('douglas.') || upgraded.includes('notino.') || upgraded.includes('flaconi.')) {
-    upgraded = upgraded.replace(/\/\d+x\d+\//g, '/');
-    upgraded = upgraded.replace(/\?.*$/, '');
-  }
-  
-  // === STRAWBERRYNET ===
-  if (upgraded.includes('strawberrynet.com')) {
-    upgraded = upgraded.replace(/_\d+\./g, '.');
-    upgraded = upgraded.replace(/\/thumb\//g, '/large/');
-  }
-  
-  // === GENERIC PATTERNS ===
-  // Remove common size suffixes
-  upgraded = upgraded.replace(/[-_](small|thumb|thumbnail|xs|sm|md|mini|tiny|preview)\./gi, '.');
-  
-  // Remove numeric size patterns like _300. or -500.
-  upgraded = upgraded.replace(/[-_]\d{2,4}\.(jpg|jpeg|png|webp)/gi, '.$1');
-  
-  // Remove quality parameters
-  upgraded = upgraded.replace(/[?&]q(uality)?=\d+/gi, '');
-  upgraded = upgraded.replace(/[?&]w(idth)?=\d+/gi, '');
-  upgraded = upgraded.replace(/[?&]h(eight)?=\d+/gi, '');
-  
-  // Convert webp to png/jpg for potentially higher quality source
-  // (Only if the URL structure suggests there's an original)
-  if (upgraded.includes('format=webp') || upgraded.includes('fm=webp')) {
-    upgraded = upgraded.replace(/format=webp/gi, 'format=png');
-    upgraded = upgraded.replace(/fm=webp/gi, 'fm=png');
-  }
-  
-  // Clean up any double slashes (except after protocol)
-  upgraded = upgraded.replace(/([^:])\/{2,}/g, '$1/');
-  
-  // Clean up empty query strings
-  upgraded = upgraded.replace(/\?&/g, '?').replace(/\?$/g, '');
-  
-  return upgraded;
-}
-
-// Verify the product page is actually for a fragrance/perfume product
-async function verifyFragranceProduct(page: Page): Promise<boolean> {
-  try {
-    // Get the page title and content to check if it's a fragrance
-    const pageContent = await page.evaluate(() => {
-      const title = document.title.toLowerCase();
-      const h1 = document.querySelector('h1')?.textContent?.toLowerCase() || '';
-      const breadcrumb = document.querySelector('[class*="breadcrumb"], .breadcrumbs, nav[aria-label*="breadcrumb"]')?.textContent?.toLowerCase() || '';
-      const metaDesc = document.querySelector('meta[name="description"]')?.getAttribute('content')?.toLowerCase() || '';
-      const bodyText = document.body.innerText.toLowerCase().slice(0, 5000); // First 5000 chars
-      return { title, h1, breadcrumb, metaDesc, bodyText };
-    });
-
-    // Fragrance-related keywords
-    const fragranceKeywords = [
-      'perfume', 'cologne', 'fragrance', 'eau de', 'parfum', 'toilette',
-      'scent', 'spray', 'ml', 'oz', 'edp', 'edt', 'body mist', 'aftershave',
-      'amouage', 'chanel', 'dior', 'gucci', 'versace', 'armani', 'ysl',
-      'tom ford', 'creed', 'jo malone', 'dolce', 'gabbana', 'burberry'
-    ];
-
-    // Non-fragrance keywords that indicate wrong product
-    const nonFragranceKeywords = [
-      'tv', 'television', 'laptop', 'phone', 'computer', 'electronics',
-      'furniture', 'clothing', 'shoes', 'appliance', 'kitchen', 'home decor',
-      'xiaomi', 'samsung tv', 'lg tv', 'sony tv', 'smart tv', '4k display'
-    ];
-
-    // Check for non-fragrance keywords first (these are strong indicators of wrong product)
-    const combinedText = `${pageContent.title} ${pageContent.h1} ${pageContent.breadcrumb}`;
-    for (const keyword of nonFragranceKeywords) {
-      if (combinedText.includes(keyword)) {
-        console.log(`  Non-fragrance keyword found: "${keyword}"`);
-        return false;
-      }
-    }
-
-    // Check for fragrance keywords
-    for (const keyword of fragranceKeywords) {
-      if (combinedText.includes(keyword) || pageContent.metaDesc.includes(keyword)) {
-        return true;
-      }
-    }
-
-    // If no clear indicators, check body text for fragrance terms
-    let fragranceScore = 0;
-    for (const keyword of fragranceKeywords) {
-      if (pageContent.bodyText.includes(keyword)) {
-        fragranceScore++;
-      }
-    }
-
-    // Require at least 2 fragrance keywords in body text
-    return fragranceScore >= 2;
-  } catch (err) {
-    console.log(`  Error verifying fragrance product: ${err}`);
-    return true; // Default to true if verification fails
-  }
-}
-
-// Check if we're on a product page (redirected from search)
-async function isProductPage(page: Page): Promise<boolean> {
-  const url = page.url();
-  const productPatterns = [
-    /\/product[s]?\//i,
-    /\/p\//i,
-    /\/item\//i,
-    /\/dp\//i,
-    /\.html$/i,
-    /\/[a-z-]+-perfume/i,
-    /\/[a-z-]+-cologne/i,
-    /\/[a-z-]+-eau-de/i,
-  ];
-  return productPatterns.some(pattern => pattern.test(url));
-}
-
-// Scrape a single store for a SKU - OPTIMIZED VERSION
+// Scrape a single store
 async function scrapeStore(
   page: Page,
   store: StoreConfig,
   sku: string
 ): Promise<ScrapedImageResult[]> {
-  const results: ScrapedImageResult[] = [];
-  const searchUrl = buildSearchUrl(store, sku);
+  const searchUrl = store.searchUrlTemplate.replace("{sku}", sku);
+  console.log(`  Navigating to: ${searchUrl}`);
 
   try {
-    console.log(`  Navigating to: ${searchUrl}`);
-    await page.goto(searchUrl, {
-      waitUntil: "networkidle2",
-      timeout: 25000,
-    });
+    await page.goto(searchUrl, { waitUntil: "networkidle2", timeout: 25000 });
+    await randomDelay(1000, 2000);
 
-    await delay(2000);
-
-    // Check if we were redirected to a product page
-    const currentUrl = page.url();
-    const wasRedirected = currentUrl !== searchUrl && await isProductPage(page);
-    
-    if (wasRedirected) {
-      console.log(`  Redirected to product page: ${currentUrl}`);
+    // Check for no results
+    const noResults = await page.$(store.selectors.noResults);
+    if (noResults) {
+      console.log(`  No product found for SKU ${sku} on ${store.name} - SKIPPING`);
+      return [];
     }
 
-    // Check if product was found
-    const productFound = await isProductFound(page, store);
-    
-    if (!productFound && !wasRedirected) {
-      // Try to find product links and navigate to first one
-      try {
-        const productLinks = await page.$$eval(
-          store.selectors.productLink,
-          (links) => links
-            .map((a) => a.getAttribute("href"))
-            .filter((href): href is string => !!href)
-            .slice(0, 1)
-        );
+    // Check if we found a product
+    const productFound = await page.$(store.selectors.productFound);
+    if (!productFound) {
+      console.log(`  No product found for SKU ${sku} on ${store.name} - SKIPPING`);
+      return [];
+    }
 
-        if (productLinks.length > 0) {
-          const productUrl = productLinks[0].startsWith("http")
-            ? productLinks[0]
-            : `${store.baseUrl}${productLinks[0]}`;
-          
-          console.log(`  Found product link, navigating to: ${productUrl}`);
-          await page.goto(productUrl, {
-            waitUntil: "networkidle2",
-            timeout: 25000,
-          });
-          await delay(2000);
-        } else {
-          console.log(`  No product found for SKU ${sku} on ${store.name} - SKIPPING`);
-          return results;
+    // Check if we need to navigate to product page
+    const productLink = await page.$(store.selectors.productLink);
+    if (productLink) {
+      const href = await productLink.evaluate((el) => el.getAttribute("href"));
+      if (href && !href.includes("search")) {
+        const productUrl = href.startsWith("http")
+          ? href
+          : new URL(href, store.baseUrl).href;
+        console.log(`  Found product link, navigating to: ${productUrl}`);
+        await page.goto(productUrl, { waitUntil: "networkidle2", timeout: 25000 });
+        await randomDelay(500, 1000);
+        
+        // Check if this is actually a fragrance product (for stores that sell multiple categories)
+        const pageUrl = page.url();
+        const pageTitle = await page.title();
+        const isFragrance = 
+          pageUrl.toLowerCase().includes('fragrance') ||
+          pageUrl.toLowerCase().includes('perfume') ||
+          pageUrl.toLowerCase().includes('cologne') ||
+          pageUrl.toLowerCase().includes('eau-de') ||
+          pageTitle.toLowerCase().includes('fragrance') ||
+          pageTitle.toLowerCase().includes('perfume') ||
+          pageTitle.toLowerCase().includes('cologne') ||
+          pageTitle.toLowerCase().includes('eau de');
+        
+        // Also check if redirected to a non-product page
+        if (pageUrl.includes('invitation') || pageUrl.includes('closed') || pageUrl.includes('unavailable')) {
+          console.log(`  Redirected to product page: ${pageUrl}`);
+          console.log(`  Product on ${store.name} is not a fragrance - SKIPPING`);
+          return [];
         }
-      } catch (err) {
-        console.log(`  No product found for SKU ${sku} on ${store.name} - SKIPPING`);
-        return results;
       }
     }
 
-    // Verify this is actually a fragrance/perfume product page
-    const isFragranceProduct = await verifyFragranceProduct(page);
-    if (!isFragranceProduct) {
-      console.log(`  Product on ${store.name} is not a fragrance - SKIPPING`);
-      return results;
-    }
+    // Extract images
+    const imageUrls = await extractAllProductImages(page, store);
 
-    // Extract product images using all strategies
-    const images = await extractAllProductImages(page, store);
-    
-    if (images.length === 0) {
-      console.log(`  No valid product images found on ${store.name}`);
-      return results;
-    }
-    
-    for (const imageUrl of images) {
-      results.push({
-        sku,
-        storeName: store.name,
-        sourceUrl: page.url(),
-        imageUrl,
-      });
-    }
+    return imageUrls.map((imageUrl) => ({
+      sku,
+      storeName: store.name,
+      sourceUrl: page.url(),
+      imageUrl: imageUrl.startsWith("//") ? `https:${imageUrl}` : imageUrl,
+    }));
   } catch (err) {
-    console.error(
-      `Error scraping ${store.name} for SKU ${sku}:`,
-      err instanceof Error ? err.message : err
-    );
+    console.error(`Error scraping ${store.name} for SKU ${sku}: ${err}`);
+    return [];
   }
-
-  return results;
 }
 
-// Download image and check dimensions before uploading
+// Download and upload image to S3
 async function downloadAndUploadImage(
   imageUrl: string,
   sku: string,
   storeName: string,
   index: number,
-  minWidth: number = 500,
-  minHeight: number = 500
+  minWidth: number = 400,
+  minHeight: number = 400
 ): Promise<{ s3Key: string; s3Url: string; width: number; height: number } | null> {
   try {
     const response = await fetch(imageUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": getRandomUserAgent(),
         "Accept": "image/webp,image/apng,image/*,*/*;q=0.8",
         "Referer": new URL(imageUrl).origin,
       },
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+      console.log(`  Failed to download image (${response.status}): ${imageUrl.substring(0, 60)}...`);
+      return null;
     }
 
     const contentType = response.headers.get("content-type") || "image/jpeg";
-    
-    // Skip non-image content
-    if (!contentType.includes("image")) {
-      console.log(`  Skipping non-image content: ${contentType}`);
+    if (!contentType.startsWith("image/")) {
+      console.log(`  Not an image (${contentType}): ${imageUrl.substring(0, 60)}...`);
       return null;
     }
-    
+
     const buffer = Buffer.from(await response.arrayBuffer());
-    
-    // Skip very small files (likely icons/placeholders) - require at least 15KB for HQ images
-    if (buffer.length < 15000) {
-      console.log(`  Skipping small file (${buffer.length} bytes): ${imageUrl.substring(0, 50)}...`);
-      return null;
-    }
     
     // Check image dimensions using sharp for reliable detection
     let dimensions: { width: number; height: number } | null = null;
@@ -804,7 +462,7 @@ function getImageDimensions(buffer: Buffer): { width: number; height: number } |
 }
 
 // Scrape all stores for a single SKU
-export async function scrapeSku(sku: string, useProxy: boolean = true): Promise<SkuScrapeResult> {
+export async function scrapeSku(sku: string, useProxy: boolean = false): Promise<SkuScrapeResult> {
   const browser = await getBrowser(useProxy);
   const page = await browser.newPage();
 
