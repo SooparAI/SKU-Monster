@@ -1,5 +1,6 @@
-// Scraper Service for SKU Image Scraper
-// Uses Puppeteer to scrape product images from multiple stores - FULLY PROGRAMMATIC (no AI)
+// Scraper Service - OPTIMIZED
+// Uses UPC database first, then falls back to top stores only
+// Parallel processing, hard timeouts, auto-cleanup
 
 import puppeteer from "puppeteer";
 import type { Browser, Page } from "puppeteer";
@@ -13,6 +14,7 @@ import { promisify } from "util";
 import { storagePut } from "../storage";
 import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
+import { lookupUpc, extractProductKeywords } from "./upcLookup";
 
 const execAsync = promisify(exec);
 
@@ -45,44 +47,66 @@ export interface ScrapeJobResult {
   failedSkus: number;
 }
 
-// Constants for resource management
-const JOB_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max per SKU
-const PAGE_TIMEOUT_MS = 20000; // 20 seconds per page navigation
-const PARALLEL_LIMIT = 8; // Run 8 stores at a time
+// ===== OPTIMIZED CONSTANTS =====
+const SKU_TIMEOUT_MS = 3 * 60 * 1000;   // 3 min max per SKU (was 5)
+const PAGE_TIMEOUT_MS = 10000;            // 10s per page (was 20)
+const PARALLEL_LIMIT = 5;                 // 5 stores at a time (was 8, less memory)
+const MAX_STORE_IMAGES = 10;              // Stop store scraping at 10 images (was 20)
+const TOP_STORES_COUNT = 12;              // Only scrape top 12 stores (was 54!)
+
+// Top stores that are most reliable for fragrance products
+const TOP_STORE_NAMES = new Set([
+  "FragranceNet",
+  "FragranceX",
+  "Sephora",
+  "Nordstrom",
+  "Ulta Beauty",
+  "Macy's",
+  "Bloomingdale's",
+  "Neiman Marcus",
+  "Harrods",
+  "Selfridges",
+  "Realry",
+  "The Perfume Shop",
+]);
 
 // Browser instance management
 let browserInstance: Browser | null = null;
+let browserPid: number | null = null;
 
 async function getBrowser(): Promise<Browser> {
   // Always close existing browser and create fresh one
   if (browserInstance) {
     try {
-      if (browserInstance.connected) {
-        await browserInstance.close();
-      }
-    } catch (e) {
-      // Ignore close errors
-    }
+      if (browserInstance.connected) await browserInstance.close();
+    } catch { /* ignore */ }
     browserInstance = null;
   }
   
-  const launchArgs = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-accelerated-2d-canvas",
-    "--disable-gpu",
-    "--window-size=1920x1080",
-    "--disable-blink-features=AutomationControlled",
-    "--disable-features=IsolateOrigins,site-per-process",
-  ];
-
   browserInstance = await puppeteer.launch({
     headless: true,
-    args: launchArgs,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-accelerated-2d-canvas",
+      "--disable-gpu",
+      "--window-size=1920x1080",
+      "--disable-blink-features=AutomationControlled",
+      "--disable-features=IsolateOrigins,site-per-process",
+      "--disable-extensions",
+      "--disable-background-networking",
+      "--disable-default-apps",
+      "--disable-sync",
+      "--disable-translate",
+      "--metrics-recording-only",
+      "--no-first-run",
+    ],
   });
   
-  console.log(`[Browser] Launched new browser instance`);
+  // Track PID for force-kill if needed
+  browserPid = browserInstance.process()?.pid || null;
+  console.log(`[Browser] Launched (PID: ${browserPid})`);
   return browserInstance;
 }
 
@@ -90,40 +114,40 @@ async function closeBrowser(): Promise<void> {
   if (browserInstance) {
     try {
       await browserInstance.close();
-    } catch (e) {
-      // Ignore close errors
-    }
+    } catch { /* ignore */ }
     browserInstance = null;
+  }
+  // Force kill by PID if still running
+  if (browserPid) {
+    try {
+      await execAsync(`kill -9 ${browserPid} 2>/dev/null || true`);
+    } catch { /* ignore */ }
+    browserPid = null;
   }
 }
 
-// Kill orphaned Chrome processes (safety net)
+// Kill ALL orphaned Chrome processes (safety net)
 async function cleanupOrphanedProcesses(): Promise<void> {
   try {
+    // Kill any puppeteer chrome processes (not the system browser)
     await execAsync('pkill -9 -f "puppeteer.*chrome" 2>/dev/null || true');
     await execAsync('rm -rf /tmp/puppeteer_* 2>/dev/null || true');
-    console.log('[Cleanup] Cleaned up orphaned processes and temp dirs');
-  } catch (e) {
-    // Ignore errors
-  }
+    console.log('[Cleanup] Cleaned up orphaned processes');
+  } catch { /* ignore */ }
 }
+
+// Run cleanup on module load (server start)
+cleanupOrphanedProcesses();
 
 // Timeout wrapper
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`Operation '${operation}' timed out after ${timeoutMs}ms`));
+      reject(new Error(`'${operation}' timed out after ${timeoutMs}ms`));
     }, timeoutMs);
-    
     promise
-      .then((result) => {
-        clearTimeout(timer);
-        resolve(result);
-      })
-      .catch((err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
+      .then((result) => { clearTimeout(timer); resolve(result); })
+      .catch((err) => { clearTimeout(timer); reject(err); });
   });
 }
 
@@ -132,10 +156,8 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// Random delay to appear more human-like
 function randomDelay(min: number, max: number): Promise<void> {
-  const ms = Math.floor(Math.random() * (max - min + 1)) + min;
-  return delay(ms);
+  return delay(Math.floor(Math.random() * (max - min + 1)) + min);
 }
 
 // User agent rotation
@@ -150,173 +172,101 @@ function getRandomUserAgent(): string {
   return userAgents[Math.floor(Math.random() * userAgents.length)];
 }
 
-// CSS selectors to EXCLUDE (recommendation sections, similar items, etc.)
-const EXCLUSION_SELECTORS = [
-  // Recommendation sections
+// ===== EXCLUSION ZONES for image extraction =====
+const EXCLUDED_SECTION_SELECTORS = [
   '[class*="similar"]', '[class*="recommend"]', '[class*="related"]',
   '[class*="also-like"]', '[class*="you-may"]', '[class*="recently"]',
-  '[class*="cross-sell"]', '[class*="upsell"]', '[class*="suggestion"]',
+  '[class*="cross-sell"]', '[class*="upsell"]', '[class*="carousel"]',
   '[id*="similar"]', '[id*="recommend"]', '[id*="related"]',
-  // Footer/header areas
-  'footer', 'header', 'nav', '[role="navigation"]',
-  // Carousels and sliders (often contain other products)
-  '[class*="carousel"]', '[class*="slider"]', '[class*="swiper"]',
-  // Reviews and ratings
-  '[class*="review"]', '[class*="rating"]',
-];
+  '[data-component*="recommend"]', '[data-component*="similar"]',
+  'footer', '[class*="footer"]',
+].join(', ');
 
-// Main product area selectors (prioritized)
 const MAIN_PRODUCT_SELECTORS = [
-  '[class*="product-gallery"]', '[class*="product-image"]', '[class*="pdp-image"]',
-  '[class*="main-image"]', '[class*="hero-image"]', '[class*="primary-image"]',
-  '[data-testid*="product-image"]', '[data-testid*="gallery"]',
-  '.product-detail img', '.product-main img', '#product-image',
-  '[class*="zoom"]', '[data-zoom-image]',
+  '[class*="product-image"]', '[class*="product-gallery"]',
+  '[class*="pdp-image"]', '[class*="main-image"]',
+  '[class*="hero-image"]', '[class*="product-media"]',
+  '[data-component="product-image"]', '[data-testid*="product-image"]',
+  '.product-detail img', '.product-page img',
+  '[class*="zoom"]', '[class*="magnif"]',
 ];
 
-// Extract product images from a page - PROGRAMMATIC ONLY
+// Extract product images from a page
 async function extractProductImages(page: Page, store: StoreConfig): Promise<string[]> {
   const images: string[] = [];
   
   try {
-    // Get all images with their positions and attributes - inline all logic to avoid __name issues
-    const imageData = await page.evaluate(() => {
-      const results: Array<{
-        src: string;
-        width: number;
-        height: number;
-        naturalWidth: number;
-        naturalHeight: number;
-        top: number;
-        dataSrc?: string;
-        dataZoom?: string;
-        srcset?: string;
-        parentClasses: string;
-      }> = [];
+    const extracted = await page.evaluate((mainSelectors: string[], excludedSelectors: string, storeSelectors: any) => {
+      const results: string[] = [];
+      const seen = new Set<string>();
       
-      // Get all images
-      const imgs = Array.from(document.querySelectorAll('img'));
-      for (const img of imgs) {
-        const rect = img.getBoundingClientRect();
-        const src = img.src || img.getAttribute('data-src') || img.getAttribute('data-lazy-src') || '';
-        
-        if (!src || src.startsWith('data:')) continue;
-        
-        // Collect parent classes for filtering
-        let parentClasses = '';
-        let current: Element | null = img;
-        for (let i = 0; i < 5 && current; i++) {
-          parentClasses += ' ' + (current.className || '');
-          current = current.parentElement;
+      // Helper to add image URL
+      const addImg = (url: string | null | undefined) => {
+        if (!url || url.startsWith('data:') || seen.has(url)) return;
+        seen.add(url);
+        results.push(url);
+      };
+      
+      // Mark excluded zones
+      const excludedElements = document.querySelectorAll(excludedSelectors);
+      const isInExcludedZone = (el: Element): boolean => {
+        for (const excluded of Array.from(excludedElements)) {
+          if (excluded.contains(el)) return true;
         }
-        
-        results.push({
-          src,
-          width: rect.width,
-          height: rect.height,
-          naturalWidth: img.naturalWidth,
-          naturalHeight: img.naturalHeight,
-          top: rect.top + window.scrollY,
-          dataSrc: img.getAttribute('data-src') || undefined,
-          dataZoom: img.getAttribute('data-zoom-image') || img.getAttribute('data-large') || undefined,
-          srcset: img.getAttribute('srcset') || undefined,
-          parentClasses: parentClasses.toLowerCase(),
-        });
+        return false;
+      };
+      
+      // Strategy 1: Store-specific selector
+      if (storeSelectors.productImage) {
+        const storeImgs = document.querySelectorAll(storeSelectors.productImage);
+        for (const img of Array.from(storeImgs)) {
+          if (isInExcludedZone(img)) continue;
+          const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-zoom-image');
+          addImg(src);
+        }
+      }
+      
+      // Strategy 2: Main product area selectors
+      for (const selector of mainSelectors) {
+        const container = document.querySelector(selector);
+        if (!container || isInExcludedZone(container)) continue;
+        const imgs = container.querySelectorAll('img');
+        for (const img of Array.from(imgs)) {
+          const src = img.getAttribute('src') || img.getAttribute('data-src');
+          addImg(src);
+        }
+      }
+      
+      // Strategy 3: Large images in top portion of page only
+      if (results.length < 3) {
+        const allImgs = document.querySelectorAll('img');
+        for (const img of Array.from(allImgs)) {
+          if (isInExcludedZone(img)) continue;
+          const rect = img.getBoundingClientRect();
+          // Only images in top 1200px of page
+          if (rect.top > 1200) continue;
+          // Must be reasonably sized
+          if (rect.width < 200 || rect.height < 200) continue;
+          
+          const src = img.getAttribute('src') || img.getAttribute('data-src');
+          addImg(src);
+        }
       }
       
       return results;
-    });
+    }, MAIN_PRODUCT_SELECTORS, EXCLUDED_SECTION_SELECTORS, store.selectors);
     
-    // Exclusion patterns for parent classes
-    const excludedClassPatterns = ['similar', 'recommend', 'related', 'carousel', 'slider', 'footer', 'header', 'nav', 'review', 'rating'];
-    const mainAreaClassPatterns = ['product', 'gallery', 'main', 'hero', 'primary', 'pdp', 'zoom'];
-    
-    // Filter and score images
-    const validImages = imageData
-      .filter(img => {
-        // Exclude images in recommendation sections (check parent classes)
-        for (const pattern of excludedClassPatterns) {
-          if (img.parentClasses.includes(pattern)) return false;
-        }
-        
-        // Only images in top 1200px of page (main product area)
-        if (img.top > 1200) return false;
-        
-        // Minimum size requirements
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        if (width < 300 || height < 300) return false;
-        
-        // Filter out non-product URLs
-        const url = img.src.toLowerCase();
-        const excludePatterns = [
-          'logo', 'icon', 'sprite', 'button', 'arrow', 'chevron',
-          'thumb', 'thumbnail', '_xs', '_sm', '_tiny', 'mini',
-          'placeholder', 'loading', 'lazy', 'blank', 'empty',
-          'payment', 'visa', 'mastercard', 'paypal', 'badge',
-          'social', 'facebook', 'twitter', 'instagram',
-          'pixel', 'tracking', '1x1', 'spacer', 'beacon',
-          'star', 'rating', 'review', 'avatar', 'profile',
-          'banner', 'promo', 'ad-', 'cart', 'checkout',
-          'similar', 'recommend', 'related',
-        ];
-        
-        for (const pattern of excludePatterns) {
-          if (url.includes(pattern)) return false;
-        }
-        
-        return true;
-      })
-      .sort((a, b) => {
-        // Check if in main product area (by parent classes)
-        const aInMain = mainAreaClassPatterns.some(p => a.parentClasses.includes(p));
-        const bInMain = mainAreaClassPatterns.some(p => b.parentClasses.includes(p));
-        
-        // Prioritize main product area images
-        if (aInMain && !bInMain) return -1;
-        if (!aInMain && bInMain) return 1;
-        
-        // Then by size (larger is better)
-        const sizeA = (a.naturalWidth || a.width) * (a.naturalHeight || a.height);
-        const sizeB = (b.naturalWidth || b.width) * (b.naturalHeight || b.height);
-        return sizeB - sizeA;
-      });
-    
-    // Get best URLs (prefer high-res versions)
-    for (const img of validImages.slice(0, 5)) {
-      // Try to get highest resolution version
-      let bestUrl = img.dataZoom || img.src;
-      
-      // Parse srcset for highest resolution
-      if (img.srcset) {
-        const srcsetParts = img.srcset.split(',').map(s => s.trim());
-        let maxWidth = 0;
-        for (const part of srcsetParts) {
-          const match = part.match(/(\S+)\s+(\d+)w/);
-          if (match && parseInt(match[2]) > maxWidth) {
-            maxWidth = parseInt(match[2]);
-            bestUrl = match[1];
-          }
-        }
+    // Clean up URLs
+    for (let url of extracted) {
+      if (url.startsWith('//')) url = 'https:' + url;
+      else if (url.startsWith('/')) {
+        const baseUrl = new URL(store.baseUrl);
+        url = baseUrl.origin + url;
       }
-      
-      // Clean up URL
-      if (bestUrl && !bestUrl.startsWith('data:')) {
-        // Make absolute URL
-        if (bestUrl.startsWith('//')) {
-          bestUrl = 'https:' + bestUrl;
-        } else if (bestUrl.startsWith('/')) {
-          const baseUrl = new URL(store.baseUrl);
-          bestUrl = baseUrl.origin + bestUrl;
-        }
-        
-        if (!images.includes(bestUrl)) {
-          images.push(bestUrl);
-        }
-      }
+      if (!images.includes(url)) images.push(url);
     }
     
-    console.log(`  Store selector found ${images.length} images`);
+    console.log(`  Extracted ${images.length} product images`);
   } catch (err) {
     console.error(`  Error extracting images: ${err}`);
   }
@@ -324,85 +274,50 @@ async function extractProductImages(page: Page, store: StoreConfig): Promise<str
   return images;
 }
 
-// Scrape a single store for a SKU - PROGRAMMATIC with SKU verification
+// Scrape a single store for a SKU
 async function scrapeStore(page: Page, store: StoreConfig, sku: string): Promise<ScrapedImageResult[]> {
   const results: ScrapedImageResult[] = [];
   
   try {
-    // Build search URL
     const searchUrl = store.searchUrlTemplate.replace("{sku}", sku);
-    console.log(`  Navigating to: ${searchUrl}`);
     
-    // Navigate with timeout
     await withTimeout(
-      page.goto(searchUrl, { waitUntil: "networkidle2", timeout: PAGE_TIMEOUT_MS }),
-      PAGE_TIMEOUT_MS + 5000,
+      page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS }),
+      PAGE_TIMEOUT_MS + 3000,
       `Navigate to ${store.name}`
     );
     
-    await randomDelay(500, 1000);
+    // Short wait for dynamic content
+    await delay(1500);
     
-    // Check if product was found
+    // Check no results
     const noResults = await page.$(store.selectors.noResults);
-    if (noResults) {
-      console.log(`  No product found for SKU ${sku} on ${store.name} - SKIPPING`);
-      return [];
-    }
+    if (noResults) return [];
     
-    // CRITICAL: Verify the SKU appears on the page to avoid wrong products
+    // Verify SKU on page
     const pageContent = await page.evaluate(() => {
-      // Get page text content
-      const body = document.body.innerText || '';
-      const title = document.title || '';
-      // Also check meta tags and data attributes
-      const meta = Array.from(document.querySelectorAll('meta')).map(m => m.getAttribute('content') || '').join(' ');
-      return (body + ' ' + title + ' ' + meta).toLowerCase();
+      return (document.body.innerText + ' ' + document.title).toLowerCase();
     });
     
-    // Check if SKU appears on the page (exact match or with common separators)
-    const skuPatterns = [
-      sku,
-      sku.replace(/(\d{3})(\d{3})(\d+)/, '$1-$2-$3'), // 701-666-410164
-      sku.replace(/(\d{3})(\d{3})(\d{3})(\d+)/, '$1$2$3$4'), // variations
-    ];
-    
-    const skuFound = skuPatterns.some(pattern => pageContent.includes(pattern.toLowerCase()));
-    
-    if (!skuFound) {
-      // SKU not found on page - this is likely a wrong product or generic search results
-      console.log(`  SKU ${sku} NOT FOUND on page - likely wrong product, SKIPPING`);
+    const skuLower = sku.toLowerCase();
+    if (!pageContent.includes(skuLower)) {
+      console.log(`  [${store.name}] SKU not found on page - skipping`);
       return [];
     }
     
-    console.log(`  SKU ${sku} VERIFIED on page - extracting images`);
-    
-    // Try to find and click on product link if we're on search results
+    // Try clicking through to product page
     const productLink = await page.$(store.selectors.productLink);
     if (productLink) {
-      const href = await productLink.evaluate(el => el.getAttribute('href'));
-      if (href && !href.includes(sku)) {
-        // We're on search results, click through to product
-        try {
-          await productLink.click();
-          await page.waitForNavigation({ waitUntil: "networkidle2", timeout: PAGE_TIMEOUT_MS });
-          await randomDelay(500, 1000);
-          
-          // Re-verify SKU after navigation
-          const newContent = await page.evaluate(() => document.body.innerText.toLowerCase());
-          if (!skuPatterns.some(p => newContent.includes(p.toLowerCase()))) {
-            console.log(`  SKU ${sku} NOT FOUND after navigation - SKIPPING`);
-            return [];
-          }
-        } catch {
-          // Navigation might not happen if already on product page
-        }
-      }
+      try {
+        await productLink.click();
+        await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS }).catch(() => {});
+        await delay(1000);
+      } catch { /* ignore */ }
     }
     
     // Extract images
     const imageUrls = await extractProductImages(page, store);
     
-    // Convert to results
     for (const url of imageUrls) {
       results.push({
         sku,
@@ -411,196 +326,168 @@ async function scrapeStore(page: Page, store: StoreConfig, sku: string): Promise
         imageUrl: url,
       });
     }
-    
-    console.log(`  Total unique product images found: ${results.length}`);
   } catch (err) {
     if (err instanceof Error && err.message.includes('timed out')) {
-      console.error(`  ${store.name} timed out - skipping`);
+      console.log(`  [${store.name}] Timed out - skipping`);
     } else {
-      console.error(`Error scraping ${store.name} for SKU ${sku}: ${err}`);
+      console.error(`  [${store.name}] Error: ${err instanceof Error ? err.message : err}`);
     }
   }
   
   return results;
 }
 
-import { lookupUpc, extractProductKeywords } from "./upcLookup";
+// Get top stores only (not all 54)
+function getTopStores(): StoreConfig[] {
+  const active = getActiveStores();
+  const top = active.filter(s => TOP_STORE_NAMES.has(s.name));
+  // If we don't have enough top stores, add more from active list
+  if (top.length < TOP_STORES_COUNT) {
+    const remaining = active.filter(s => !TOP_STORE_NAMES.has(s.name));
+    top.push(...remaining.slice(0, TOP_STORES_COUNT - top.length));
+  }
+  return top.slice(0, TOP_STORES_COUNT);
+}
 
-// Scrape all stores for a single SKU - FULLY PROGRAMMATIC (no AI)
+// ===== MAIN SCRAPE FUNCTION =====
 export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
   const startTime = Date.now();
-  
   const allImages: ScrapedImageResult[] = [];
   const errors: string[] = [];
   
-  // STEP 1: Try UPC database lookup first (fast, reliable, no scraping needed)
-  console.log(`[UPC Lookup] Checking UPC database for SKU ${sku}...`);
+  // STEP 1: UPC database lookup (fast, reliable, no browser needed)
+  console.log(`[UPC] Looking up SKU ${sku}...`);
   const upcResult = await lookupUpc(sku);
   
-  let productKeywords: string[] = [];
-  
   if (upcResult.found) {
-    console.log(`[UPC Lookup] Found product: ${upcResult.productName}`);
-    productKeywords = extractProductKeywords(upcResult.productName, upcResult.brand);
-    console.log(`[UPC Lookup] Keywords for verification: ${productKeywords.join(', ')}`);
+    console.log(`[UPC] Found: ${upcResult.productName} (${upcResult.images.length} images)`);
     
-    // Use images from UPC database directly
-    if (upcResult.images.length > 0) {
-      console.log(`[UPC Lookup] Using ${upcResult.images.length} images from UPC database`);
-      for (const imageUrl of upcResult.images) {
-        allImages.push({
-          sku,
-          storeName: "UPC Database",
-          sourceUrl: "upcitemdb.com",
-          imageUrl,
-        });
-      }
+    for (const imageUrl of upcResult.images) {
+      allImages.push({
+        sku,
+        storeName: "UPC Database",
+        sourceUrl: "upcitemdb.com",
+        imageUrl,
+      });
     }
   } else {
-    console.log(`[UPC Lookup] Product not found in UPC database, will scrape stores`);
+    console.log(`[UPC] Not found, will scrape stores`);
   }
   
-  // STEP 2: If we have enough images from UPC database, skip store scraping
+  // STEP 2: Only scrape stores if UPC didn't give us enough
   const needStoreScraping = allImages.length < 3;
   
-  if (!needStoreScraping) {
-    console.log(`[UPC Lookup] Got ${allImages.length} images from UPC database, skipping store scraping`);
-  }
-  
-  const browser = needStoreScraping ? await getBrowser() : null;
-  
-  try {
-    if (needStoreScraping && browser) {
-      // STEP 3: Scrape stores for additional images
-      const storesToScrape = getActiveStores();
-      console.log(`[Programmatic] Scraping ${storesToScrape.length} stores for SKU ${sku}...`);
-    
-      // Process stores in parallel batches
-    for (let i = 0; i < storesToScrape.length; i += PARALLEL_LIMIT) {
-      // Check timeout
-      if (Date.now() - startTime > JOB_TIMEOUT_MS) {
-        console.log(`[Timeout] SKU ${sku} exceeded ${JOB_TIMEOUT_MS / 1000}s limit, stopping`);
-        errors.push(`Timeout after ${Math.floor((Date.now() - startTime) / 1000)}s`);
-        break;
-      }
+  if (needStoreScraping) {
+    const browser = await getBrowser();
+    try {
+      const stores = getTopStores();
+      console.log(`[Scrape] Scraping ${stores.length} top stores for SKU ${sku}...`);
       
-      const batch = storesToScrape.slice(i, i + PARALLEL_LIMIT);
-      const batchNum = Math.floor(i / PARALLEL_LIMIT) + 1;
-      const totalBatches = Math.ceil(storesToScrape.length / PARALLEL_LIMIT);
-      
-      console.log(`Batch ${batchNum}/${totalBatches}: ${batch.map(s => s.name).join(', ')}`);
-      
-      const batchResults = await Promise.all(
-        batch.map(async (store) => {
-          const storePage = await browser.newPage();
-          await storePage.setUserAgent(getRandomUserAgent());
-          await storePage.setViewport({ width: 1920, height: 1080 });
-          
-          try {
-            const images = await scrapeStore(storePage, store, sku);
-            
-            if (images.length === 0) {
-              console.log(`  [${store.name}] No product found - skipped`);
-            } else {
-              console.log(`  [${store.name}] Found ${images.length} images`);
-            }
-            
-            return { store: store.name, images, error: null };
-          } catch (err) {
-            const errorMsg = `${store.name}: ${err instanceof Error ? err.message : "Unknown error"}`;
-            console.error(`  [${store.name}] Error: ${err instanceof Error ? err.message : err}`);
-            return { store: store.name, images: [], error: errorMsg };
-          } finally {
-            try {
-              await storePage.close();
-            } catch { /* ignore */ }
-          }
-        })
-      );
-      
-      // Collect results
-      for (const result of batchResults) {
-        if (result.error) {
-          errors.push(result.error);
+      for (let i = 0; i < stores.length; i += PARALLEL_LIMIT) {
+        // Check timeout
+        if (Date.now() - startTime > SKU_TIMEOUT_MS) {
+          console.log(`[Timeout] Exceeded ${SKU_TIMEOUT_MS / 1000}s, stopping`);
+          errors.push(`Timeout after ${Math.floor((Date.now() - startTime) / 1000)}s`);
+          break;
         }
-        allImages.push(...result.images);
+        
+        const batch = stores.slice(i, i + PARALLEL_LIMIT);
+        console.log(`  Batch: ${batch.map(s => s.name).join(', ')}`);
+        
+        const batchResults = await Promise.all(
+          batch.map(async (store) => {
+            const storePage = await browser.newPage();
+            await storePage.setUserAgent(getRandomUserAgent());
+            await storePage.setViewport({ width: 1920, height: 1080 });
+            
+            try {
+              return await scrapeStore(storePage, store, sku);
+            } catch (err) {
+              errors.push(`${store.name}: ${err instanceof Error ? err.message : "Error"}`);
+              return [];
+            } finally {
+              try { await storePage.close(); } catch { /* ignore */ }
+            }
+          })
+        );
+        
+        for (const images of batchResults) {
+          allImages.push(...images);
+        }
+        
+        // Early exit if we have enough
+        if (allImages.length >= MAX_STORE_IMAGES) {
+          console.log(`[Early Exit] ${allImages.length} images found, stopping`);
+          break;
+        }
       }
-      
-      // Early exit if we have enough images
-      if (allImages.length >= 20) {
-        console.log(`[Early Exit] Found ${allImages.length} images, stopping early`);
-        break;
-      }
+    } finally {
+      await closeBrowser();
     }
-    
-    console.log(`Scraping complete. Found ${allImages.length} total images in ${Math.floor((Date.now() - startTime) / 1000)}s`);
-    } // End of if (needStoreScraping && browser)
-
-    // Deduplicate by URL
-    const uniqueUrls = new Set<string>();
-    const uniqueImages = allImages.filter(img => {
-      if (uniqueUrls.has(img.imageUrl)) return false;
-      uniqueUrls.add(img.imageUrl);
-      return true;
-    });
-    
-    console.log(`Found ${uniqueImages.length} unique images for SKU ${sku}`);
-    
-    // Process through HQ pipeline (upscaling)
-    const imageUrls = uniqueImages.map(img => img.imageUrl);
-    const hqResult = await processImagesHQ(sku, imageUrls);
-    
-    console.log(`[HQ Pipeline] Processing steps: ${hqResult.processingSteps.join(' → ')}`);
-    console.log(`[HQ Pipeline] Result: ${hqResult.images.length} HQ images, cost: $${hqResult.totalCost.toFixed(4)}`);
-    
-    // Upload HQ images to S3
-    const uploadedHQ = await uploadHQImages(sku, hqResult.images);
-    
-    // Map uploaded images back
-    let uploadedCount = 0;
-    for (let i = 0; i < uploadedHQ.length && i < uniqueImages.length; i++) {
-      const uploaded = uploadedHQ[i];
-      if (uploaded && uniqueImages[i]) {
-        uniqueImages[i].s3Key = uploaded.s3Key;
-        uniqueImages[i].s3Url = uploaded.s3Url;
-        uniqueImages[i].width = uploaded.width;
-        uniqueImages[i].height = uploaded.height;
-        uploadedCount++;
-      }
-    }
-    
-    // Add extra HQ images if pipeline produced more
-    for (let i = uniqueImages.length; i < uploadedHQ.length; i++) {
-      const uploaded = uploadedHQ[i];
-      if (uploaded) {
-        uniqueImages.push({
-          sku,
-          storeName: "HQ Pipeline",
-          sourceUrl: "",
-          imageUrl: uploaded.s3Url,
-          s3Key: uploaded.s3Key,
-          s3Url: uploaded.s3Url,
-          width: uploaded.width,
-          height: uploaded.height,
-        });
-        uploadedCount++;
-      }
-    }
-    
-    console.log(`Uploaded ${uploadedCount} HQ images for SKU ${sku}`);
-    
-    // Filter to only images with S3 URLs
-    const finalImages = uniqueImages.filter(img => img.s3Url);
-    
-    return {
-      sku,
-      images: finalImages,
-      errors,
-      status: finalImages.length > 0 ? "completed" : errors.length > 0 ? "partial" : "failed",
-    };
-  } finally {
-    await closeBrowser();
+  } else {
+    console.log(`[UPC] ${allImages.length} images from UPC, skipping stores`);
   }
+  
+  // Deduplicate
+  const uniqueUrls = new Set<string>();
+  const uniqueImages = allImages.filter(img => {
+    if (uniqueUrls.has(img.imageUrl)) return false;
+    uniqueUrls.add(img.imageUrl);
+    return true;
+  });
+  
+  console.log(`[${sku}] ${uniqueImages.length} unique images in ${Math.floor((Date.now() - startTime) / 1000)}s`);
+  
+  // STEP 3: HQ pipeline (parallel scoring + parallel upscaling)
+  const imageUrls = uniqueImages.map(img => img.imageUrl);
+  const hqResult = await processImagesHQ(sku, imageUrls);
+  
+  console.log(`[HQ] ${hqResult.images.length} HQ images, cost: $${hqResult.totalCost.toFixed(4)}`);
+  
+  // STEP 4: Upload to S3 (parallel)
+  const uploadedHQ = await uploadHQImages(sku, hqResult.images);
+  
+  // Map uploaded images back
+  let uploadedCount = 0;
+  for (let i = 0; i < uploadedHQ.length && i < uniqueImages.length; i++) {
+    const uploaded = uploadedHQ[i];
+    if (uploaded && uniqueImages[i]) {
+      uniqueImages[i].s3Key = uploaded.s3Key;
+      uniqueImages[i].s3Url = uploaded.s3Url;
+      uniqueImages[i].width = uploaded.width;
+      uniqueImages[i].height = uploaded.height;
+      uploadedCount++;
+    }
+  }
+  
+  // Add extra HQ images
+  for (let i = uniqueImages.length; i < uploadedHQ.length; i++) {
+    const uploaded = uploadedHQ[i];
+    if (uploaded) {
+      uniqueImages.push({
+        sku,
+        storeName: "HQ Pipeline",
+        sourceUrl: "",
+        imageUrl: uploaded.s3Url,
+        s3Key: uploaded.s3Key,
+        s3Url: uploaded.s3Url,
+        width: uploaded.width,
+        height: uploaded.height,
+      });
+      uploadedCount++;
+    }
+  }
+  
+  console.log(`[${sku}] Uploaded ${uploadedCount} HQ images`);
+  
+  const finalImages = uniqueImages.filter(img => img.s3Url);
+  
+  return {
+    sku,
+    images: finalImages,
+    errors,
+    status: finalImages.length > 0 ? "completed" : errors.length > 0 ? "partial" : "failed",
+  };
 }
 
 // Create zip from results
@@ -617,7 +504,7 @@ async function createZipFromResults(
       },
     });
 
-    const archive = archiver("zip", { zlib: { level: 9 } });
+    const archive = archiver("zip", { zlib: { level: 6 } }); // Level 6 instead of 9 (faster)
 
     archive.on("error", reject);
     archive.on("end", async () => {
@@ -634,7 +521,6 @@ async function createZipFromResults(
 
     archive.pipe(writableStream);
 
-    // Add HQ images to zip
     let addedCount = 0;
     for (const result of results) {
       for (let i = 0; i < result.images.length; i++) {
@@ -655,13 +541,12 @@ async function createZipFromResults(
         }
       }
     }
-    console.log(`Added ${addedCount} HQ images to zip, finalizing...`);
-
+    console.log(`Added ${addedCount} HQ images to zip`);
     archive.finalize();
   });
 }
 
-// Main scrape job function with timeout enforcement
+// ===== MAIN JOB RUNNER with hard timeout =====
 export async function runScrapeJob(
   orderId: number,
   skus: string[],
@@ -672,27 +557,32 @@ export async function runScrapeJob(
   let processedSkus = 0;
   let failedSkus = 0;
 
-  console.log(`Starting scrape job ${orderId} with ${skus.length} SKUs`);
+  console.log(`[Job ${orderId}] Starting with ${skus.length} SKUs`);
+
+  // Set a hard timeout for the entire job
+  const jobTimeout = setTimeout(async () => {
+    console.error(`[Job ${orderId}] HARD TIMEOUT - force killing all processes`);
+    await closeBrowser();
+    await cleanupOrphanedProcesses();
+  }, SKU_TIMEOUT_MS * skus.length + 60000); // Total timeout = per-SKU timeout * count + 1 min buffer
 
   try {
     for (let i = 0; i < skus.length; i++) {
       const sku = skus[i];
-      console.log(`Processing SKU ${i + 1}/${skus.length}: ${sku}`);
+      console.log(`[Job ${orderId}] SKU ${i + 1}/${skus.length}: ${sku}`);
 
       try {
         const result = await withTimeout(
           scrapeSku(sku),
-          JOB_TIMEOUT_MS,
+          SKU_TIMEOUT_MS,
           `Scrape SKU ${sku}`
         );
         results.push(result);
         totalImages += result.images.length;
         processedSkus++;
-        if (result.status === "failed") {
-          failedSkus++;
-        }
+        if (result.status === "failed") failedSkus++;
       } catch (err) {
-        console.error(`SKU ${sku} failed: ${err}`);
+        console.error(`[Job ${orderId}] SKU ${sku} failed: ${err}`);
         results.push({
           sku,
           images: [],
@@ -703,38 +593,28 @@ export async function runScrapeJob(
         processedSkus++;
       }
 
-      if (onProgress) {
-        onProgress(i + 1, skus.length);
-      }
+      if (onProgress) onProgress(i + 1, skus.length);
     }
 
-    // Create zip file
-    console.log(`Starting zip creation for order ${orderId}...`);
+    // Create zip
+    console.log(`[Job ${orderId}] Creating zip...`);
     let zipKey = "";
     let zipUrl = "";
     try {
       const zipResult = await createZipFromResults(results, orderId);
       zipKey = zipResult.zipKey;
       zipUrl = zipResult.zipUrl;
-      console.log(`Zip created successfully: ${zipUrl}`);
+      console.log(`[Job ${orderId}] Zip created: ${zipUrl}`);
     } catch (zipErr) {
-      console.error(`Failed to create zip for order ${orderId}:`, zipErr);
+      console.error(`[Job ${orderId}] Zip failed:`, zipErr);
     }
 
-    return {
-      orderId,
-      results,
-      zipKey,
-      zipUrl,
-      totalImages,
-      processedSkus,
-      failedSkus,
-    };
+    return { orderId, results, zipKey, zipUrl, totalImages, processedSkus, failedSkus };
   } finally {
-    // Always cleanup
+    clearTimeout(jobTimeout);
     await closeBrowser();
     await cleanupOrphanedProcesses();
-    console.log(`Scrape job ${orderId} complete. Cleaned up resources.`);
+    console.log(`[Job ${orderId}] Complete. Resources cleaned up.`);
   }
 }
 
@@ -748,9 +628,7 @@ export function parseSkusFromText(text: string): string[] {
   const skus: string[] = [];
   for (const part of parts) {
     const matches = part.match(/\d{8,14}/g);
-    if (matches) {
-      skus.push(...matches);
-    }
+    if (matches) skus.push(...matches);
   }
 
   return Array.from(new Set(skus));

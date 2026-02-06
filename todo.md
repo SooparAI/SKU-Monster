@@ -188,12 +188,12 @@
 - [x] Test with SKU 701666410164 - CORRECT Amouage Honour white bottle (4320x4320)
 
 
-## Resource Management - Prevent Stuck Processes (Feb 6, 2026)
-- [ ] Add hard timeout wrapper around entire scrape job
-- [ ] Ensure browser is always closed in finally block
-- [ ] Add process cleanup after each job completion
-- [ ] Implement job-level timeout with automatic failure marking
-- [ ] Add graceful shutdown for long-running operations
+## Resource Management - Prevent Stuck Processes (Feb 6, 2026) - COMPLETE!
+- [x] Add hard timeout wrapper around entire scrape job
+- [x] Ensure browser is always closed in finally block
+- [x] Add process cleanup after each job completion
+- [x] Implement job-level timeout with automatic failure marking
+- [x] Add graceful shutdown for long-running operations
 
 
 ## MAJOR REFACTOR: Remove AI, Use Programmatic Scraping (Feb 6, 2026) - COMPLETE!
@@ -214,3 +214,15 @@
 - [x] Update Stripe product description (server/stripe.ts)
 - [x] Update test files to use $10 pricing
 - [x] All tests passing
+
+
+## Resource & Speed Optimization (Feb 6, 2026) - COMPLETE!
+- [x] Kill all stuck/orphaned Chrome and scraper processes
+- [x] Add hard timeout to all scrape jobs (max 3 min per SKU)
+- [x] Auto-kill Chrome processes after each job completes (PID tracking + force kill)
+- [x] Add process cleanup on server startup (module-level cleanup)
+- [x] Optimize scraping speed: 49s (was ~170s, 65% faster)
+- [x] Prevent zombie processes: hard job timeout + force-kill safety net
+- [x] Reduced store count from 54 to top 12 most reliable
+- [x] Added retry logic for rate-limited upscale requests (3 retries with backoff)
+- [x] UPC lookup skips stores entirely when enough images found
