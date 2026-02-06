@@ -284,3 +284,9 @@
 - [x] New flow: UPC -> Google Images -> eBay -> Amazon -> Browser (optional)
 - [x] Verified: Orders 270016 and 270017 completed with 3 HQ images each
 - [x] All 27 tests passing, production build clean
+
+## Auto-Refund Failed Orders (Feb 6, 2026)
+- [x] When scrape returns 0 images (all SKUs failed), auto-refund the full charge
+- [x] Create a refund transaction in the transactions table (type: 'refund')
+- [x] Also auto-refund when entire job crashes (outer catch)
+- [x] All 27 tests passing, production build clean

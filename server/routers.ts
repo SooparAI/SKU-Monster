@@ -543,6 +543,11 @@ async function processScrapeJob(orderId: number, skus: string[]) {
     }
 
     console.log(`Scrape job ${orderId} completed successfully. Total images: ${result.totalImages}, Zip URL: ${result.zipUrl}`);
+
+    // AUTO-REFUND: If ALL SKUs failed (0 images total), refund the user
+    if (result.totalImages === 0 && result.failedSkus === skus.length) {
+      await autoRefundOrder(orderId, skus.length);
+    }
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`Scrape job ${orderId} error:`, errorMsg, err instanceof Error ? err.stack : '');
@@ -568,6 +573,39 @@ async function processScrapeJob(orderId: number, skus: string[]) {
     } catch (updateErr) {
       console.error(`Failed to update order items for ${orderId}:`, updateErr);
     }
+
+    // AUTO-REFUND: Entire job crashed, refund the user
+    await autoRefundOrder(orderId, skus.length);
+  }
+}
+
+// Auto-refund a failed order by crediting the user's balance
+async function autoRefundOrder(orderId: number, skuCount: number) {
+  try {
+    const order = await getOrderById(orderId);
+    if (!order) {
+      console.error(`[Refund] Order ${orderId} not found`);
+      return;
+    }
+
+    const refundAmount = skuCount * SKU_PRICE;
+    console.log(`[Refund] Auto-refunding $${refundAmount} for failed order ${orderId} (${skuCount} SKUs)`);
+
+    // Credit the user's balance
+    await addToUserBalance(order.userId, refundAmount);
+
+    // Create refund transaction
+    await createTransaction({
+      userId: order.userId,
+      type: "refund",
+      amount: refundAmount.toFixed(2),
+      status: "completed",
+      description: `Auto-refund for failed Order #${orderId} - ${skuCount} SKUs (0 images found)`,
+    });
+
+    console.log(`[Refund] Successfully refunded $${refundAmount} to user ${order.userId} for order ${orderId}`);
+  } catch (refundErr) {
+    console.error(`[Refund] Failed to auto-refund order ${orderId}:`, refundErr);
   }
 }
 
