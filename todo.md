@@ -290,3 +290,17 @@
 - [x] Create a refund transaction in the transactions table (type: 'refund')
 - [x] Also auto-refund when entire job crashes (outer catch)
 - [x] All 27 tests passing, production build clean
+
+## Bug: Final images too small (133KB-700KB instead of 1.7MB-8MB) (Feb 6, 2026)
+- [x] Root cause: Replicate rate limits on deployed server causing fallback to originals
+- [x] Replaced Replicate with AI image generation (see below)
+
+## Feature: Replace Replicate with AI Image Generation (Feb 6, 2026)
+- [x] Use Forge ImageService API to generate clean white-background product images
+- [x] Use scraped images as reference for AI generation (1:1 faithful replica)
+- [x] 3 variants per SKU: main (front), angle (3/4 view), detail (close-up)
+- [x] Upscale from 1024x1024 to 4096x4096 with sharp Lanczos3 resampling
+- [x] Falls back to 1024x1024 if sharp unavailable on deployed server
+- [x] Falls back to original scraped images if AI generation fails entirely
+- [x] Verified: Order 270018 - 3 images at 4096x4096, 2.4-3.0MB each
+- [x] All 27 tests passing, production build clean

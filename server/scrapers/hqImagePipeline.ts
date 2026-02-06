@@ -1,25 +1,26 @@
 /**
- * HQ Image Processing Pipeline - RESILIENT VERSION
+ * HQ Image Processing Pipeline - AI GENERATION VERSION
  * 
  * Strategy:
  * 1. Pre-filter URLs by pattern (FREE, instant)
  * 2. Score images in PARALLEL - works with or without sharp (FREE, ~2-3s total)
- * 3. Upscale top 3 images SEQUENTIALLY (~10-15s total)
- * 4. Upload to S3
+ * 3. Pick the BEST reference image
+ * 4. Generate clean 4K product image via AI (Forge ImageService)
+ * 5. Upscale AI output from 1024→4096 with sharp (or keep 1024 if sharp unavailable)
+ * 6. Upload to S3
  * 
- * Key resilience features:
- * - Works without sharp (falls back to size-only scoring)
- * - Works without Replicate (skips upscaling, uses originals)
- * - If all images fail scoring, uses them anyway
+ * Key features:
+ * - Uses AI to generate clean white-background product photos from scraped references
+ * - Output is retailer-ready (Amazon, Walmart, eBay compliant)
+ * - Works without sharp (uploads at 1024x1024 instead of 4096x4096)
+ * - Falls back to original scraped images if AI generation fails
  * - Comprehensive error logging for debugging
- * 
- * Target: <30s total, <$0.002 per SKU
  */
 
 import { storagePut } from '../storage';
 import { nanoid } from 'nanoid';
 
-// Try to import sharp - it may not be available in all environments
+// Dynamic sharp import - may not be available in all environments
 let sharpModule: any = null;
 let sharpLoaded = false;
 
@@ -31,13 +32,15 @@ async function getSharp(): Promise<any> {
     sharpModule = mod.default || mod;
     console.log('[HQ Pipeline] sharp module loaded successfully');
   } catch (e) {
-    console.warn('[HQ Pipeline] sharp not available, using fallback scoring (size-only)');
+    console.warn('[HQ Pipeline] sharp not available, AI images will be 1024x1024');
     sharpModule = null;
   }
   return sharpModule;
 }
 
-const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
+// Forge API config (from environment)
+const FORGE_API_URL = process.env.BUILT_IN_FORGE_API_URL || '';
+const FORGE_API_KEY = process.env.BUILT_IN_FORGE_API_KEY || '';
 
 interface ProcessedImage {
   originalUrl: string;
@@ -45,7 +48,7 @@ interface ProcessedImage {
   width: number;
   height: number;
   sizeKB: number;
-  source: 'scraper' | 'upscaled';
+  source: 'scraper' | 'ai_generated';
   isHQ: boolean;
   score: number;
 }
@@ -60,7 +63,6 @@ interface HQPipelineResult {
 }
 
 // Non-product URL patterns to filter out
-// IMPORTANT: Use exact parameter matches (w=50&) to avoid false positives like w=500 matching w=50
 const NON_PRODUCT_PATTERNS = [
   'logo', 'icon', 'sprite', 'button', 'arrow', 'chevron',
   'close', 'search', 'menu', 'header', 'footer',
@@ -88,7 +90,6 @@ const PRODUCT_PATTERNS = [
 
 /**
  * Pre-filter URLs by pattern (FREE - instant)
- * More lenient: accepts common image formats including dynamic image servers
  */
 function preFilterByUrl(urls: string[]): string[] {
   return urls.filter(url => {
@@ -96,7 +97,6 @@ function preFilterByUrl(urls: string[]): string[] {
     for (const pattern of NON_PRODUCT_PATTERNS) {
       if (urlLower.includes(pattern)) return false;
     }
-    // Accept URLs with image extensions OR dynamic image servers (like Bloomingdale's .tif?fmt=jpeg)
     const hasImageExt = /\.(jpg|jpeg|png|webp|tif|tiff)(\?|$)/i.test(url);
     const hasImageParam = /fmt=(jpeg|jpg|png|webp)/i.test(url);
     const hasImageContentHint = /\/images?\//i.test(url) || /\/media\//i.test(url);
@@ -107,7 +107,6 @@ function preFilterByUrl(urls: string[]): string[] {
 
 /**
  * Score an image - downloads once and returns buffer for reuse
- * Works with or without sharp module
  */
 async function scoreImage(imageUrl: string): Promise<{
   score: number;
@@ -119,7 +118,7 @@ async function scoreImage(imageUrl: string): Promise<{
   try {
     const response = await fetch(imageUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(10000), // 10s timeout per image
+      signal: AbortSignal.timeout(10000),
     });
     
     if (!response.ok) {
@@ -132,9 +131,8 @@ async function scoreImage(imageUrl: string): Promise<{
     
     let width = 0;
     let height = 0;
-    let score = 50; // Base score
+    let score = 50;
     
-    // Try to get dimensions with sharp
     const sharp = await getSharp();
     if (sharp) {
       try {
@@ -142,38 +140,36 @@ async function scoreImage(imageUrl: string): Promise<{
         width = metadata.width || 0;
         height = metadata.height || 0;
       } catch (e) {
-        console.log(`[HQ Score] sharp metadata failed for ${imageUrl.substring(0, 60)}: ${e}`);
+        console.log(`[HQ Score] sharp metadata failed: ${e}`);
       }
     }
     
-    // File size scoring (works without sharp)
-    if (sizeKB < 2) score -= 50;       // Tiny = probably icon
-    else if (sizeKB < 10) score -= 20;  // Small = probably thumbnail
-    else if (sizeKB >= 200) score += 30; // Large = likely product photo
-    else if (sizeKB >= 50) score += 15;  // Medium = reasonable
+    // File size scoring
+    if (sizeKB < 2) score -= 50;
+    else if (sizeKB < 10) score -= 20;
+    else if (sizeKB >= 200) score += 30;
+    else if (sizeKB >= 50) score += 15;
     
-    // Dimension scoring (only if sharp available)
+    // Dimension scoring
     if (width > 0 && height > 0) {
       if (width < 200 || height < 200) score -= 40;
       else if (width >= 800 && height >= 800) score += 30;
       else if (width >= 500 && height >= 500) score += 15;
       
-      // Aspect ratio (perfume bottles are square/portrait)
       const aspectRatio = width / height;
       if (aspectRatio >= 0.6 && aspectRatio <= 1.2) score += 20;
       else if (aspectRatio > 2.5 || aspectRatio < 0.4) score -= 30;
     } else {
-      // No dimensions available - give benefit of doubt based on file size
       if (sizeKB >= 30) score += 10;
     }
     
-    // URL pattern scoring (works without sharp)
+    // URL pattern scoring
     const urlLower = imageUrl.toLowerCase();
     for (const pattern of PRODUCT_PATTERNS) {
       if (urlLower.includes(pattern)) { score += 5; break; }
     }
     
-    // Quick content analysis (only if sharp available)
+    // Content analysis with sharp
     if (sharp) {
       try {
         const stats = await sharp(buffer).stats();
@@ -184,7 +180,7 @@ async function scoreImage(imageUrl: string): Promise<{
         
         const avgMean = channels.reduce((sum: number, ch: any) => sum + ch.mean, 0) / channels.length;
         if (avgMean > 200 && avgStdDev > 30) score += 15;
-      } catch { /* ignore stats errors */ }
+      } catch { /* ignore */ }
     }
     
     const finalScore = Math.max(0, Math.min(100, score));
@@ -197,79 +193,126 @@ async function scoreImage(imageUrl: string): Promise<{
 }
 
 /**
- * Upscale image using Real-ESRGAN via Replicate API
+ * Generate a clean 4K product image using AI (Forge ImageService)
+ * Takes a reference image URL and generates a retailer-ready product photo
  */
-async function upscaleImage(imageUrl: string, scale: number = 4): Promise<string | null> {
-  if (!REPLICATE_API_TOKEN) return null;
+async function generateProductImage(
+  referenceImageUrl: string,
+  productName: string | null,
+  brand: string | null,
+  variant: 'main' | 'angle' | 'detail'
+): Promise<{ buffer: Buffer; width: number; height: number } | null> {
+  if (!FORGE_API_URL || !FORGE_API_KEY) {
+    console.log('[AI Gen] Forge API not configured, skipping AI generation');
+    return null;
+  }
+
+  const productDesc = [brand, productName].filter(Boolean).join(' ') || 'this product';
   
-  const MAX_RETRIES = 2;
-  
-  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    try {
-      if (attempt > 0) {
-        const waitTime = 3000 + attempt * 3000; // 3s, 6s
-        console.log(`[Upscale] Retry ${attempt}/${MAX_RETRIES}, waiting ${waitTime/1000}s...`);
-        await new Promise(r => setTimeout(r, waitTime));
-      }
-      
-      console.log(`[Upscale] Starting: ${imageUrl.substring(0, 60)}...`);
-      
-      const createResponse = await fetch('https://api.replicate.com/v1/predictions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Token ${REPLICATE_API_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          version: 'f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa',
-          input: { image: imageUrl, scale, face_enhance: false },
-        }),
-      });
-      
-      if (!createResponse.ok) {
-        const errorText = await createResponse.text();
-        if (createResponse.status === 429 && attempt < MAX_RETRIES - 1) {
-          console.log(`[Upscale] Rate limited, will retry...`);
-          continue;
-        }
-        console.error(`[Upscale] Create failed: ${errorText}`);
-        return null;
-      }
+  // Different prompts for different angles/variants
+  const prompts: Record<string, string> = {
+    main: `Generate a professional e-commerce product photograph of ${productDesc}. This must be an exact 1:1 faithful reproduction of the product shown in the reference image. Requirements:
+- Pure white background (#FFFFFF), absolutely no shadows, no reflections, no gradients
+- Product centered in frame, filling approximately 80-85% of the image area
+- Preserve ALL labels, text, branding, logos, colors, and packaging details EXACTLY as shown in the reference
+- Professional studio lighting: soft, even, diffused light from multiple angles to eliminate all shadows
+- Ultra-sharp focus on every detail of the product
+- Square 1:1 aspect ratio
+- Suitable for Amazon, Walmart, eBay, and all major retailer product listings
+- No props, no lifestyle elements, no decorations, no surface — product only floating on pure white`,
+
+    angle: `Generate a professional e-commerce product photograph of ${productDesc} from a slightly different angle than the reference image. Requirements:
+- Pure white background (#FFFFFF), no shadows, no reflections
+- Show the product from a 30-45 degree angle to reveal depth and side details
+- Preserve ALL branding, text, colors, and design elements exactly as the original product
+- Professional studio lighting, ultra-sharp focus
+- Square 1:1 aspect ratio
+- Retailer-compliant product photography standard
+- No props, no background elements — product only on pure white`,
+
+    detail: `Generate a professional e-commerce product photograph of ${productDesc} showing a close-up detail view. Requirements:
+- Pure white background (#FFFFFF), no shadows
+- Focus on the product's key distinguishing features (cap, label, texture, branding details)
+- Preserve ALL text, logos, and design elements with perfect accuracy
+- Macro-style professional studio photography
+- Square 1:1 aspect ratio
+- Ultra-sharp, high detail rendering
+- No props — product detail only on pure white`,
+  };
+
+  const prompt = prompts[variant] || prompts.main;
+
+  try {
+    console.log(`[AI Gen] Generating ${variant} image for ${productDesc}...`);
     
-      const prediction = await createResponse.json();
+    const baseUrl = FORGE_API_URL.endsWith('/') ? FORGE_API_URL : FORGE_API_URL + '/';
+    const fullUrl = new URL('images.v1.ImageService/GenerateImage', baseUrl).toString();
     
-      // Poll for completion (max 45 seconds)
-      for (let i = 0; i < 22; i++) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        const statusResponse = await fetch(`https://api.replicate.com/v1/predictions/${prediction.id}`, {
-          headers: { 'Authorization': `Token ${REPLICATE_API_TOKEN}` },
-        });
-        
-        const status = await statusResponse.json();
-        
-        if (status.status === 'succeeded') {
-          console.log(`[Upscale] Done: ${status.output}`);
-          return status.output;
-        } else if (status.status === 'failed') {
-          console.error(`[Upscale] Failed: ${status.error}`);
-          return null;
-        }
-      }
-    
-      console.error('[Upscale] Timeout');
-      return null;
-    } catch (error) {
-      console.error(`[Upscale] Error: ${error}`);
-      if (attempt < MAX_RETRIES - 1) continue;
+    const response = await fetch(fullUrl, {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'connect-protocol-version': '1',
+        authorization: `Bearer ${FORGE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        prompt,
+        original_images: [{
+          url: referenceImageUrl,
+          mimeType: 'image/jpeg'
+        }]
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[AI Gen] API error (${response.status}): ${errorText.substring(0, 200)}`);
       return null;
     }
+
+    const result = await response.json() as {
+      image: { b64Json: string; mimeType: string };
+    };
+
+    if (!result.image?.b64Json) {
+      console.error('[AI Gen] No image data in response');
+      return null;
+    }
+
+    const aiBuffer = Buffer.from(result.image.b64Json, 'base64');
+    console.log(`[AI Gen] Generated ${variant}: 1024x1024, ${(aiBuffer.length / 1024).toFixed(1)}KB`);
+
+    // Try to upscale to 4096x4096 with sharp
+    const sharp = await getSharp();
+    if (sharp) {
+      try {
+        const upscaled = await sharp(aiBuffer)
+          .resize(4096, 4096, {
+            kernel: 'lanczos3',
+            fit: 'fill',
+          })
+          .png({ quality: 100, compressionLevel: 6 })
+          .toBuffer();
+        
+        console.log(`[AI Gen] Upscaled to 4096x4096, ${(upscaled.length / 1024).toFixed(1)}KB`);
+        return { buffer: upscaled, width: 4096, height: 4096 };
+      } catch (e) {
+        console.warn(`[AI Gen] Sharp upscale failed, using 1024x1024: ${e}`);
+        return { buffer: aiBuffer, width: 1024, height: 1024 };
+      }
+    }
+
+    // No sharp available - return 1024x1024
+    return { buffer: aiBuffer, width: 1024, height: 1024 };
+  } catch (err) {
+    console.error(`[AI Gen] Error generating ${variant} image: ${err}`);
+    return null;
   }
-  return null;
 }
 
 /**
- * Main HQ Pipeline - RESILIENT with fallbacks
+ * Main HQ Pipeline - AI GENERATION with fallbacks
  */
 export async function processImagesHQ(
   sku: string,
@@ -287,7 +330,6 @@ export async function processImagesHQ(
   };
   
   console.log(`[HQ Pipeline] Processing ${scrapedImageUrls.length} images for SKU ${sku}`);
-  console.log(`[HQ Pipeline] sharp available: ${!!sharpModule}, Replicate available: ${!!REPLICATE_API_TOKEN}`);
   
   if (scrapedImageUrls.length === 0) {
     result.processingSteps.push('No images to process');
@@ -299,14 +341,13 @@ export async function processImagesHQ(
   const preFiltered = preFilterByUrl(scrapedImageUrls);
   console.log(`[HQ Pipeline] Pre-filter: ${scrapedImageUrls.length} → ${preFiltered.length} images`);
   
-  // FALLBACK: If pre-filter removes everything, use all original URLs
   const urlsToScore = preFiltered.length > 0 ? preFiltered : scrapedImageUrls;
   if (preFiltered.length === 0) {
     console.log(`[HQ Pipeline] Pre-filter removed all images, using originals as fallback`);
     result.processingSteps.push('Pre-filter fallback: using all original URLs');
   }
   
-  // Step 2: Score images IN PARALLEL (only first 10 to save time)
+  // Step 2: Score images IN PARALLEL (first 10)
   result.processingSteps.push('Scoring images...');
   const imagesToScore = urlsToScore.slice(0, 10);
   
@@ -322,144 +363,87 @@ export async function processImagesHQ(
     .filter(img => img.score >= 40 && img.buffer !== null)
     .sort((a, b) => b.score - a.score);
   
-  // FALLBACK: If no images pass scoring, use any that downloaded successfully
+  // Fallback: use any downloaded image
   if (scoredImages.length === 0) {
-    console.log(`[HQ Pipeline] No images passed score threshold, using fallback (any downloaded image)`);
-    result.processingSteps.push('Score fallback: using any successfully downloaded images');
+    console.log(`[HQ Pipeline] No images passed score threshold, using fallback`);
+    result.processingSteps.push('Score fallback: using any downloaded images');
     scoredImages = scoreResults
-      .filter(img => img.buffer !== null && img.sizeKB > 2) // Just needs to be downloaded and not tiny
-      .sort((a, b) => b.sizeKB - a.sizeKB); // Sort by size (bigger = probably better)
+      .filter(img => img.buffer !== null && img.sizeKB > 2)
+      .sort((a, b) => b.sizeKB - a.sizeKB);
   }
   
   for (const img of scoredImages) {
     console.log(`[HQ Pipeline] ✓ Score ${img.score}: ${img.url.substring(0, 60)}... (${img.width}x${img.height}, ${img.sizeKB.toFixed(1)}KB)`);
   }
   
-  // Take top 3
-  const topImages = scoredImages.slice(0, 3);
-  console.log(`[HQ Pipeline] Selected top ${topImages.length} images`);
-  result.processingSteps.push(`Selected ${topImages.length} best images (scores: ${topImages.map(i => i.score).join(', ')})`);
-  
-  if (topImages.length === 0) {
+  if (scoredImages.length === 0) {
     result.processingSteps.push('No images could be downloaded');
     console.error(`[HQ Pipeline] CRITICAL: No images could be downloaded for SKU ${sku}`);
     return result;
   }
   
-  // Step 3: Separate HQ images from those needing upscale
-  const alreadyHQ: typeof topImages = [];
-  const needUpscale: typeof topImages = [];
+  // Step 3: Pick the best reference image for AI generation
+  const bestRef = scoredImages[0];
+  console.log(`[HQ Pipeline] Best reference: ${bestRef.url.substring(0, 80)}... (score: ${bestRef.score})`);
   
-  for (const img of topImages) {
-    if ((img.width >= 1500 || img.height >= 1500) && img.sizeKB >= 80) {
-      console.log(`[HQ Pipeline] Already HQ: ${img.width}x${img.height}`);
-      alreadyHQ.push(img);
+  // First, upload the best reference to S3 so the AI API can access it reliably
+  let referenceUrl = bestRef.url;
+  if (bestRef.buffer) {
+    try {
+      const refKey = `scrapes/${sku}/ref_${nanoid(6)}.jpg`;
+      const { url: s3RefUrl } = await storagePut(refKey, bestRef.buffer, 'image/jpeg');
+      referenceUrl = s3RefUrl;
+      console.log(`[HQ Pipeline] Reference uploaded to S3: ${s3RefUrl.substring(0, 60)}...`);
+    } catch (e) {
+      console.warn(`[HQ Pipeline] Failed to upload reference to S3, using original URL: ${e}`);
+    }
+  }
+  
+  // Step 4: Generate AI product images (3 variants)
+  const variants: Array<'main' | 'angle' | 'detail'> = ['main', 'angle', 'detail'];
+  result.processingSteps.push('Generating AI product images...');
+  
+  let aiSuccessCount = 0;
+  
+  for (const variant of variants) {
+    const aiResult = await generateProductImage(referenceUrl, productName || null, brand || null, variant);
+    
+    if (aiResult) {
+      // Upload AI-generated image directly to S3
+      try {
+        const s3Key = `scrapes/${sku}/AI_${variant}_${aiResult.width}x${aiResult.height}_${nanoid(6)}.png`;
+        const { url: s3Url } = await storagePut(s3Key, aiResult.buffer, 'image/png');
+        
+        result.images.push({
+          originalUrl: referenceUrl,
+          processedUrl: s3Url,
+          width: aiResult.width,
+          height: aiResult.height,
+          sizeKB: aiResult.buffer.length / 1024,
+          source: 'ai_generated',
+          isHQ: true,
+          score: 100,
+        });
+        
+        aiSuccessCount++;
+        console.log(`[HQ Pipeline] ✓ AI ${variant}: ${aiResult.width}x${aiResult.height}, ${(aiResult.buffer.length / 1024).toFixed(1)}KB → ${s3Key}`);
+      } catch (err) {
+        console.error(`[HQ Pipeline] Failed to upload AI ${variant} image: ${err}`);
+      }
     } else {
-      needUpscale.push(img);
+      console.warn(`[HQ Pipeline] AI generation failed for ${variant} variant`);
     }
   }
   
-  // Add already-HQ images
-  for (const img of alreadyHQ) {
-    result.images.push({
-      originalUrl: img.url,
-      processedUrl: img.url,
-      width: img.width,
-      height: img.height,
-      sizeKB: img.sizeKB,
-      source: 'scraper',
-      isHQ: true,
-      score: img.score,
-    });
-  }
+  result.processingSteps.push(`AI generated ${aiSuccessCount}/3 images`);
   
-  // Step 4: Upscale images SEQUENTIALLY to avoid rate limits
-  if (needUpscale.length > 0 && REPLICATE_API_TOKEN) {
-    result.processingSteps.push(`Upscaling ${needUpscale.length} images...`);
-    console.log(`[HQ Pipeline] Upscaling ${needUpscale.length} images sequentially...`);
+  // Step 5: Fallback - if AI generation failed, upload best scraped images directly
+  if (result.images.length === 0) {
+    console.log(`[HQ Pipeline] AI generation failed, falling back to scraped images`);
+    result.processingSteps.push('AI fallback: using original scraped images');
     
-    const upscaleResults: { img: typeof needUpscale[0]; upscaledUrl: string | null }[] = [];
-    for (const img of needUpscale) {
-      const upscaledUrl = await upscaleImage(img.url, 4);
-      upscaleResults.push({ img, upscaledUrl });
-    }
-    
-    // Process upscaled results
-    const processedUpscales = await Promise.all(
-      upscaleResults.map(async ({ img, upscaledUrl }) => {
-        if (upscaledUrl) {
-          try {
-            const response = await fetch(upscaledUrl);
-            const buffer = Buffer.from(await response.arrayBuffer());
-            let upWidth = 0;
-            let upHeight = 0;
-            const sizeKB = buffer.length / 1024;
-            
-            // Try sharp for metadata, fallback to estimated dimensions
-            const sharpForMeta = await getSharp();
-            if (sharpForMeta) {
-              try {
-                const metadata = await sharpForMeta(buffer).metadata();
-                upWidth = metadata.width || 0;
-                upHeight = metadata.height || 0;
-              } catch { /* ignore */ }
-            }
-            
-            // Estimate dimensions if sharp not available
-            if (upWidth === 0 && img.width > 0) {
-              upWidth = img.width * 4;
-              upHeight = img.height * 4;
-            }
-            
-            console.log(`[HQ Pipeline] Upscaled: ${upWidth}x${upHeight}, ${sizeKB.toFixed(1)}KB`);
-            
-            return {
-              originalUrl: img.url,
-              processedUrl: upscaledUrl,
-              width: upWidth,
-              height: upHeight,
-              sizeKB,
-              source: 'upscaled' as const,
-              isHQ: true,
-              score: img.score,
-            };
-          } catch (err) {
-            console.error(`[HQ Pipeline] Failed to process upscaled image: ${err}`);
-            // Fall back to original
-            return {
-              originalUrl: img.url,
-              processedUrl: img.url,
-              width: img.width,
-              height: img.height,
-              sizeKB: img.sizeKB,
-              source: 'scraper' as const,
-              isHQ: false,
-              score: img.score,
-            };
-          }
-        }
-        // Upscale failed - use original
-        console.log(`[HQ Pipeline] Upscale failed for ${img.url.substring(0, 60)}, using original`);
-        return {
-          originalUrl: img.url,
-          processedUrl: img.url,
-          width: img.width,
-          height: img.height,
-          sizeKB: img.sizeKB,
-          source: 'scraper' as const,
-          isHQ: false,
-          score: img.score,
-        };
-      })
-    );
-    
-    for (const processed of processedUpscales) {
-      result.images.push(processed);
-      if (processed.source === 'upscaled') result.totalCost += 0.0004;
-    }
-  } else if (needUpscale.length > 0) {
-    console.log(`[HQ Pipeline] Skipping upscaling - ${!REPLICATE_API_TOKEN ? 'no Replicate API token' : 'not needed'}`);
-    for (const img of needUpscale) {
+    const topImages = scoredImages.slice(0, 3);
+    for (const img of topImages) {
       result.images.push({
         originalUrl: img.url,
         processedUrl: img.url,
@@ -467,20 +451,21 @@ export async function processImagesHQ(
         height: img.height,
         sizeKB: img.sizeKB,
         source: 'scraper',
-        isHQ: false,
+        isHQ: img.width >= 1500 || img.height >= 1500,
         score: img.score,
       });
     }
   }
   
-  result.processingSteps.push(`Pipeline complete: ${result.images.length} images, cost: $${result.totalCost.toFixed(4)}`);
-  console.log(`[HQ Pipeline] Complete: ${result.images.length} images, cost: $${result.totalCost.toFixed(4)}`);
+  result.processingSteps.push(`Pipeline complete: ${result.images.length} images (${aiSuccessCount} AI-generated)`);
+  console.log(`[HQ Pipeline] Complete: ${result.images.length} images (${aiSuccessCount} AI-generated)`);
   
   return result;
 }
 
 /**
  * Upload processed HQ images to S3 - IN PARALLEL
+ * For AI-generated images, they're already uploaded, so we just return the existing URLs
  */
 export async function uploadHQImages(
   sku: string,
@@ -494,9 +479,17 @@ export async function uploadHQImages(
   const uploadResults = await Promise.all(
     images.map(async (img, i) => {
       try {
+        // AI-generated images are already uploaded to S3 during generation
+        if (img.source === 'ai_generated' && img.processedUrl.includes('cloudfront.net')) {
+          const s3Key = img.processedUrl.split('/').slice(-3).join('/'); // Extract key from URL
+          console.log(`[HQ Upload] ✓ AI image already in S3: ${s3Key} (${img.width}x${img.height})`);
+          return { s3Key, s3Url: img.processedUrl, width: img.width, height: img.height };
+        }
+        
+        // Download and re-upload scraped images
         const response = await fetch(img.processedUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-          signal: AbortSignal.timeout(15000), // 15s timeout for download
+          signal: AbortSignal.timeout(15000),
         });
         
         if (!response.ok) {
