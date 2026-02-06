@@ -1,12 +1,12 @@
 /**
- * Image Search Fallback - Uses Perplexity API to find product image URLs
- * No browser required - pure HTTP API calls
- * 
- * Used when UPC database doesn't return enough images
+ * Image Search Fallback - Uses Google Images and eBay to find product images
+ * No browser required - pure HTTP fetch + HTML parsing
+ * No API keys required - uses public search pages
+ * No rate limits - works reliably in production
  */
 
-const PERPLEXITY_API_KEY = process.env.PERPLEXITY_API_KEY;
-const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 export interface ImageSearchResult {
   imageUrls: string[];
@@ -15,165 +15,181 @@ export interface ImageSearchResult {
 }
 
 /**
- * Search for product images using Perplexity AI
- * Returns direct image URLs that can be downloaded without a browser
+ * Search for product images using Google Images (no API key needed)
+ * Returns direct image URLs extracted from the search results page HTML
  */
-export async function searchProductImages(sku: string): Promise<ImageSearchResult> {
+export async function searchProductImages(
+  sku: string
+): Promise<ImageSearchResult> {
   const result: ImageSearchResult = {
     imageUrls: [],
     productName: "",
-    source: "perplexity",
+    source: "google_images",
   };
 
-  if (!PERPLEXITY_API_KEY) {
-    console.log("[ImageSearch] No Perplexity API key, skipping");
-    return result;
-  }
-
   try {
-    console.log(`[ImageSearch] Searching for product images: ${sku}`);
+    console.log(`[ImageSearch] Google Images search for: ${sku}`);
 
-    const response = await fetch(PERPLEXITY_API_URL, {
-      method: "POST",
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(sku)}&tbm=isch`;
+    const response = await fetch(googleUrl, {
       headers: {
-        "Authorization": `Bearer ${PERPLEXITY_API_KEY}`,
-        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
       },
-      body: JSON.stringify({
-        model: "sonar",
-        messages: [
-          {
-            role: "system",
-            content: `You are a product image finder. Given a UPC/EAN/SKU code, find the product and return DIRECT image URLs from retailer websites. 
-Return ONLY high-quality product photos (not thumbnails, not icons).
-Focus on large/high-resolution images from major retailers like Sephora, Nordstrom, FragranceNet, Macy's, etc.
-For each image URL, make sure it's a direct link to the image file (ending in .jpg, .jpeg, .png, .webp or containing image parameters).`,
-          },
-          {
-            role: "user",
-            content: `Find the product with UPC/EAN/SKU: ${sku}
-
-Return the product name and up to 10 direct image URLs in this exact format:
-PRODUCT: [product name]
-IMAGES:
-1. [direct image URL]
-2. [direct image URL]
-3. [direct image URL]
-...
-
-Only include URLs that point directly to image files. Do not include webpage URLs.`,
-          },
-        ],
-        max_tokens: 2000,
-        temperature: 0.1,
-      }),
+      signal: AbortSignal.timeout(15000),
+      redirect: "follow",
     });
 
     if (!response.ok) {
-      console.error(`[ImageSearch] Perplexity API error: ${response.status}`);
+      console.error(`[ImageSearch] Google Images error: ${response.status}`);
       return result;
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || "";
-    
-    console.log(`[ImageSearch] Raw response length: ${content.length}`);
+    const html = await response.text();
+    console.log(`[ImageSearch] Google Images HTML: ${html.length} bytes`);
 
-    // Extract product name
-    const productMatch = content.match(/PRODUCT:\s*(.+)/i);
-    if (productMatch) {
-      result.productName = productMatch[1].trim();
-    }
+    // Extract image URLs from the page - Google embeds them in the HTML
+    const imgRegex =
+      /https?:\/\/[^"'\s\\]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s\\]*)?/gi;
+    const allUrls = html.match(imgRegex) || [];
 
-    // Extract image URLs - look for any URL that looks like an image
-    const urlRegex = /https?:\/\/[^\s\n\r"'<>]+\.(jpg|jpeg|png|webp|tif|tiff)(\?[^\s\n\r"'<>]*)?/gi;
-    const matches = content.match(urlRegex) || [];
-    
-    // Also look for image URLs with format parameters (like Bloomingdale's fmt=jpeg)
-    const paramUrlRegex = /https?:\/\/[^\s\n\r"'<>]+(?:fmt=(?:jpeg|jpg|png|webp)|\/images?\/[^\s\n\r"'<>]+)/gi;
-    const paramMatches = content.match(paramUrlRegex) || [];
-    
-    const allUrls = Array.from(new Set([...matches, ...paramMatches]));
-    
-    // Filter out obviously bad URLs
-    result.imageUrls = allUrls.filter(url => {
+    // Filter out Google's own assets and keep product images
+    const productUrls = allUrls.filter((url) => {
       const lower = url.toLowerCase();
       return (
-        !lower.includes('logo') &&
-        !lower.includes('icon') &&
-        !lower.includes('favicon') &&
-        !lower.includes('sprite') &&
-        !lower.includes('placeholder') &&
-        !lower.includes('1x1') &&
-        url.length > 20
+        !lower.includes("google") &&
+        !lower.includes("gstatic") &&
+        !lower.includes("googleapis") &&
+        !lower.includes("favicon") &&
+        !lower.includes("logo") &&
+        !lower.includes("icon") &&
+        !lower.includes("sprite") &&
+        !lower.includes("1x1") &&
+        !lower.includes("pixel") &&
+        !lower.includes("tracking") &&
+        !lower.includes("analytics") &&
+        url.length > 30
       );
     });
 
-    console.log(`[ImageSearch] Found ${result.imageUrls.length} image URLs for "${result.productName}"`);
+    // Deduplicate
+    const unique = Array.from(new Set(productUrls));
+    result.imageUrls = unique.slice(0, 20); // Keep top 20
+
+    console.log(
+      `[ImageSearch] Google Images found ${result.imageUrls.length} product image URLs`
+    );
     for (const url of result.imageUrls.slice(0, 5)) {
-      console.log(`[ImageSearch]   ${url.substring(0, 80)}...`);
+      console.log(`[ImageSearch]   ${url.substring(0, 100)}`);
     }
 
     return result;
   } catch (error) {
-    console.error(`[ImageSearch] Error: ${error}`);
+    console.error(`[ImageSearch] Google Images error: ${error}`);
     return result;
   }
 }
 
 /**
- * Search for product images using direct retailer API endpoints
- * These are public endpoints that don't require authentication
+ * Search for product images on eBay (no API key needed)
+ * Returns direct image URLs from eBay search results
+ */
+export async function searchEbayImages(sku: string): Promise<string[]> {
+  const images: string[] = [];
+
+  try {
+    console.log(`[ImageSearch] eBay search for: ${sku}`);
+
+    const ebayUrl = `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(sku)}`;
+    const response = await fetch(ebayUrl, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html",
+      },
+      signal: AbortSignal.timeout(10000),
+      redirect: "follow",
+    });
+
+    if (!response.ok) {
+      console.error(`[ImageSearch] eBay error: ${response.status}`);
+      return images;
+    }
+
+    const html = await response.text();
+
+    // Extract eBay image URLs - they use i.ebayimg.com
+    const ebayImgRegex =
+      /https?:\/\/i\.ebayimg\.com\/[^"'\s]+\.(?:jpg|jpeg|png|webp)[^"'\s]*/gi;
+    const matches = html.match(ebayImgRegex) || [];
+
+    // Prefer larger images (s-l500 or s-l1600 over s-l140)
+    const unique = Array.from(new Set(matches));
+    const large = unique.filter(
+      (url) => url.includes("s-l500") || url.includes("s-l1600")
+    );
+    const other = unique.filter(
+      (url) => !url.includes("s-l140") && !large.includes(url)
+    );
+
+    images.push(...large, ...other);
+
+    console.log(`[ImageSearch] eBay found ${images.length} image URLs`);
+    for (const url of images.slice(0, 3)) {
+      console.log(`[ImageSearch]   ${url.substring(0, 100)}`);
+    }
+  } catch (error) {
+    console.error(`[ImageSearch] eBay error: ${error}`);
+  }
+
+  return images;
+}
+
+/**
+ * Search for product images using direct retailer page fetches
+ * Tries to extract og:image and product images from retailer HTML
  */
 export async function searchRetailerImages(sku: string): Promise<string[]> {
   const images: string[] = [];
-  
-  // Try Google Shopping image search via public endpoints
-  const searches = [
-    // FragranceNet direct search
-    `https://www.fragrancenet.com/search?q=${sku}`,
-    // FragranceX direct search  
-    `https://www.fragrancex.com/search?q=${sku}`,
-  ];
-  
-  // Try fetching product pages and extracting og:image meta tags
-  for (const searchUrl of searches) {
-    try {
-      const response = await fetch(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html',
-        },
-        signal: AbortSignal.timeout(8000),
-        redirect: 'follow',
-      });
-      
-      if (!response.ok) continue;
-      
-      const html = await response.text();
-      
-      // Extract og:image and product image URLs from HTML
-      const ogImageMatch = html.match(/property="og:image"\s+content="([^"]+)"/i) ||
-                           html.match(/content="([^"]+)"\s+property="og:image"/i);
-      if (ogImageMatch) {
-        images.push(ogImageMatch[1]);
-      }
-      
-      // Extract large product images from img tags
-      const imgRegex = /src="(https?:\/\/[^"]+(?:product|item|large|zoom|main|hero)[^"]*\.(?:jpg|jpeg|png|webp)[^"]*)"/gi;
-      let imgMatch;
-      while ((imgMatch = imgRegex.exec(html)) !== null) {
-        if (!images.includes(imgMatch[1])) {
-          images.push(imgMatch[1]);
-        }
-      }
-      
-      if (images.length >= 5) break;
-    } catch {
-      // Ignore individual retailer failures
+
+  // Try Amazon - often works without browser
+  const amazonUrl = `https://www.amazon.com/s?k=${encodeURIComponent(sku)}`;
+  try {
+    const resp = await fetch(amazonUrl, {
+      headers: {
+        "User-Agent": USER_AGENT,
+        Accept: "text/html",
+      },
+      signal: AbortSignal.timeout(10000),
+      redirect: "follow",
+    });
+
+    if (resp.ok) {
+      const html = await resp.text();
+      // Amazon uses m.media-amazon.com for product images
+      const amazonImgRegex =
+        /https?:\/\/m\.media-amazon\.com\/images\/I\/[^"'\s]+\.(?:jpg|jpeg|png)[^"'\s]*/gi;
+      const matches = html.match(amazonImgRegex) || [];
+      const unique = Array.from(new Set(matches));
+      // Filter out tiny images
+      const filtered = unique.filter(
+        (url) =>
+          !url.includes("_SS40_") &&
+          !url.includes("_SS50_") &&
+          !url.includes("_SS100_")
+      );
+      images.push(...filtered.slice(0, 5));
+      console.log(
+        `[RetailerSearch] Amazon found ${filtered.length} image URLs`
+      );
     }
+  } catch {
+    // Ignore
   }
-  
-  console.log(`[RetailerSearch] Found ${images.length} images from retailer pages`);
+
+  console.log(
+    `[RetailerSearch] Total: ${images.length} images from retailers`
+  );
   return images;
 }

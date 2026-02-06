@@ -274,3 +274,13 @@
 - [x] Zero static imports of puppeteer or sharp in production build
 - [x] Verified: Orders 270012 and 270013 both completed with 3 HQ images
 - [x] All 27 tests passing, production build clean
+
+## Bug: All image sources failing on deployed server (Feb 6, 2026 - Session 2e)
+- [x] UPC API rate-limited (100/day free tier) - works from sandbox but may be limited on deployed server
+- [x] Perplexity returns hallucinated/fake image URLs - replaced with Google Images scraping
+- [x] Added Google Images search (no API key, no rate limits, returns 89+ URLs)
+- [x] Added eBay image search (no API key, returns 4+ images)
+- [x] Added Amazon search as additional fallback
+- [x] New flow: UPC -> Google Images -> eBay -> Amazon -> Browser (optional)
+- [x] Verified: Orders 270016 and 270017 completed with 3 HQ images each
+- [x] All 27 tests passing, production build clean

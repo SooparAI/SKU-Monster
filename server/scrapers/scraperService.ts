@@ -13,7 +13,7 @@ import { storagePut } from "../storage";
 import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
 import { lookupUpc, extractProductKeywords } from "./upcLookup";
-import { searchProductImages, searchRetailerImages } from "./imageSearch";
+import { searchProductImages, searchEbayImages, searchRetailerImages } from "./imageSearch";
 
 const execAsync = promisify(exec);
 
@@ -325,36 +325,50 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     errors.push(`UPC lookup failed: ${upcErr instanceof Error ? upcErr.message : String(upcErr)}`);
   }
 
-  // STEP 2: Perplexity image search (no browser needed, works in production)
+  // STEP 2: Google Images search (no API key, no rate limits, no browser needed)
   if (allImages.length < 3) {
-    console.log(`[${sku}] STEP 2: Perplexity image search (have ${allImages.length} images so far)...`);
+    console.log(`[${sku}] STEP 2: Google Images search (have ${allImages.length} images so far)...`);
     try {
-      const perplexityResult = await searchProductImages(sku);
-      if (perplexityResult.imageUrls.length > 0) {
-        console.log(`[${sku}] Perplexity found ${perplexityResult.imageUrls.length} images for "${perplexityResult.productName}"`);
-        for (const imageUrl of perplexityResult.imageUrls) {
-          allImages.push({ sku, storeName: "Perplexity Search", sourceUrl: "perplexity.ai", imageUrl });
+      const googleResult = await searchProductImages(sku);
+      if (googleResult.imageUrls.length > 0) {
+        console.log(`[${sku}] Google Images found ${googleResult.imageUrls.length} images`);
+        for (const imageUrl of googleResult.imageUrls) {
+          allImages.push({ sku, storeName: "Google Images", sourceUrl: "google.com", imageUrl });
         }
       } else {
-        console.log(`[${sku}] Perplexity: no images found`);
+        console.log(`[${sku}] Google Images: no images found`);
       }
-    } catch (pplxErr) {
-      console.error(`[${sku}] Perplexity search error: ${pplxErr}`);
-      errors.push(`Perplexity search failed: ${pplxErr instanceof Error ? pplxErr.message : String(pplxErr)}`);
+    } catch (googleErr) {
+      console.error(`[${sku}] Google Images error: ${googleErr}`);
+      errors.push(`Google Images failed: ${googleErr instanceof Error ? googleErr.message : String(googleErr)}`);
     }
   }
 
-  // STEP 2b: Direct retailer page fetch (no browser needed)
+  // STEP 2b: eBay image search (no API key, no rate limits, no browser needed)
   if (allImages.length < 3) {
-    console.log(`[${sku}] STEP 2b: Direct retailer search (have ${allImages.length} images so far)...`);
+    console.log(`[${sku}] STEP 2b: eBay search (have ${allImages.length} images so far)...`);
+    try {
+      const ebayImages = await searchEbayImages(sku);
+      for (const imageUrl of ebayImages) {
+        allImages.push({ sku, storeName: "eBay", sourceUrl: "ebay.com", imageUrl });
+      }
+      console.log(`[${sku}] eBay found ${ebayImages.length} images`);
+    } catch (ebayErr) {
+      console.error(`[${sku}] eBay error: ${ebayErr}`);
+    }
+  }
+
+  // STEP 2c: Amazon/retailer direct search (no browser needed)
+  if (allImages.length < 3) {
+    console.log(`[${sku}] STEP 2c: Amazon/retailer search (have ${allImages.length} images so far)...`);
     try {
       const retailerImages = await searchRetailerImages(sku);
       for (const imageUrl of retailerImages) {
-        allImages.push({ sku, storeName: "Retailer Direct", sourceUrl: "retailer", imageUrl });
+        allImages.push({ sku, storeName: "Amazon", sourceUrl: "amazon.com", imageUrl });
       }
-      console.log(`[${sku}] Retailer search found ${retailerImages.length} images`);
+      console.log(`[${sku}] Amazon/retailer found ${retailerImages.length} images`);
     } catch (retailErr) {
-      console.error(`[${sku}] Retailer search error: ${retailErr}`);
+      console.error(`[${sku}] Amazon/retailer error: ${retailErr}`);
     }
   }
 
