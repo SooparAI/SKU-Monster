@@ -1,21 +1,17 @@
 /**
- * HQ Image Processing Pipeline - AI GENERATION VERSION
+ * HQ Image Processing Pipeline - SCRAPE-FIRST VERSION
  * 
- * Strategy:
- * 1. Pre-filter URLs by pattern (FREE, instant)
- * 2. Score images in PARALLEL - works with or without sharp (FREE, ~2-3s total)
- * 3. Pick the BEST reference image
- * 4. Generate clean product image via AI (Forge ImageService) at 1024x1024
- * 5. AI upscale 1024→4096 via Replicate Real-ESRGAN (~$0.002/image, ~4s)
- * 6. Upload to S3
+ * Strategy (prioritizes real product photos over AI generation):
+ * 1. Pre-filter scraped URLs by pattern (FREE, instant)
+ * 2. Score images in PARALLEL - picks the best real product photos
+ * 3. Upload top 3-5 scraped images to S3
+ * 4. AI upscale each via Replicate Real-ESRGAN to 4K (~$0.002/image)
+ * 5. FALLBACK ONLY: If < 3 good scraped images, use Forge AI to generate extras
  * 
- * Key features:
- * - Uses AI to generate clean white-background product photos from scraped references
- * - Real-ESRGAN neural network upscaling preserves text, logos, and fine details
- * - Output is retailer-ready (Amazon, Walmart, eBay compliant)
- * - Falls back to sharp lanczos3 if Real-ESRGAN unavailable, then 1024x1024
- * - Falls back to original scraped images if AI generation fails
- * - Comprehensive error logging for debugging
+ * Key principle:
+ * - Real product photos from retailers are ALWAYS better than AI-generated copies
+ * - Real-ESRGAN preserves original detail, text, logos, and fine features
+ * - Forge AI generates blurry 1024x1024 reproductions — only use as last resort
  */
 
 import { storagePut } from '../storage';
@@ -53,27 +49,31 @@ async function aiUpscale(imageUrl: string, scale: number = 4): Promise<Buffer | 
     console.warn('[AI Upscale] REPLICATE_API_TOKEN not set, skipping AI upscale');
     return null;
   }
-  try {
-    const replicate = new Replicate({ auth: REPLICATE_TOKEN });
-    console.log(`[AI Upscale] Upscaling ${scale}x via Real-ESRGAN: ${imageUrl.substring(0, 60)}...`);
-    const start = Date.now();
-    
-    // Use AbortController for timeout (Replicate cold starts can take 30-60s)
-    const controller = new AbortController();
-    const replicateTimeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
-    
-    let output: any;
+  
+  const MAX_RETRIES = 3;
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      output = await replicate.run(REAL_ESRGAN_MODEL, {
-        input: {
-          image: imageUrl,
-          scale,
-          face_enhance: false,
-        }
-      });
-    } finally {
-      clearTimeout(replicateTimeout);
-    }
+      const replicate = new Replicate({ auth: REPLICATE_TOKEN });
+      console.log(`[AI Upscale] Upscaling ${scale}x via Real-ESRGAN (attempt ${attempt}/${MAX_RETRIES}): ${imageUrl.substring(0, 60)}...`);
+      const start = Date.now();
+      
+      // Use AbortController for timeout (Replicate cold starts can take 30-60s)
+      const controller = new AbortController();
+      const replicateTimeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
+      
+      let output: any;
+      try {
+        output = await replicate.run(REAL_ESRGAN_MODEL, {
+          input: {
+            image: imageUrl,
+            scale,
+            face_enhance: false,
+          }
+        });
+      } finally {
+        clearTimeout(replicateTimeout);
+      }
 
     // Output is a ReadableStream — collect it into a buffer
     let buffer: Buffer;
@@ -98,17 +98,33 @@ async function aiUpscale(imageUrl: string, scale: number = 4): Promise<Buffer | 
     const elapsed = Date.now() - start;
     console.log(`[AI Upscale] Done in ${elapsed}ms, output: ${(buffer.length / 1024).toFixed(1)}KB`);
     return buffer;
-  } catch (err) {
-    console.error(`[AI Upscale] Real-ESRGAN failed: ${err instanceof Error ? err.message : err}`);
-    return null;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Retry on 429 rate limiting
+      if (errMsg.includes('429') && attempt < MAX_RETRIES) {
+        const retryAfter = errMsg.match(/resets in ~(\d+)s/);
+        const waitSec = retryAfter ? parseInt(retryAfter[1]) + 2 : 15;
+        console.warn(`[AI Upscale] Rate limited (429), waiting ${waitSec}s before retry ${attempt + 1}/${MAX_RETRIES}...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+        continue;
+      }
+      console.error(`[AI Upscale] Real-ESRGAN failed (attempt ${attempt}): ${errMsg}`);
+      if (attempt < MAX_RETRIES) {
+        console.log(`[AI Upscale] Retrying in 5s...`);
+        await new Promise(r => setTimeout(r, 5000));
+        continue;
+      }
+      return null;
+    }
   }
+  return null; // Should not reach here
 }
 
-// Forge API config (from environment)
+// Forge API config (from environment) — FALLBACK ONLY
 const FORGE_API_URL = process.env.BUILT_IN_FORGE_API_URL || '';
 const FORGE_API_KEY = process.env.BUILT_IN_FORGE_API_KEY || '';
 
-interface ProcessedImage {
+export interface ProcessedImage {
   originalUrl: string;
   processedUrl: string;
   width: number;
@@ -119,7 +135,7 @@ interface ProcessedImage {
   score: number;
 }
 
-interface HQPipelineResult {
+export interface HQPipelineResult {
   sku: string;
   images: ProcessedImage[];
   productName: string | null;
@@ -216,14 +232,15 @@ async function scoreImage(imageUrl: string): Promise<{
     else if (sizeKB >= 200) score += 30;
     else if (sizeKB >= 50) score += 15;
     
-    // Dimension scoring
+    // Dimension scoring — heavily favor large images
     if (width > 0 && height > 0) {
       if (width < 200 || height < 200) score -= 40;
+      else if (width >= 1500 && height >= 1500) score += 40; // Bonus for already-large images
       else if (width >= 800 && height >= 800) score += 30;
       else if (width >= 500 && height >= 500) score += 15;
       
       const aspectRatio = width / height;
-      if (aspectRatio >= 0.6 && aspectRatio <= 1.2) score += 20;
+      if (aspectRatio >= 0.6 && aspectRatio <= 1.2) score += 20; // Square-ish is ideal for product photos
       else if (aspectRatio > 2.5 || aspectRatio < 0.4) score -= 30;
     } else {
       if (sizeKB >= 30) score += 10;
@@ -241,11 +258,11 @@ async function scoreImage(imageUrl: string): Promise<{
         const stats = await sharp(buffer).stats();
         const channels = stats.channels;
         const avgStdDev = channels.reduce((sum: number, ch: any) => sum + ch.stdev, 0) / channels.length;
-        if (avgStdDev < 10) score -= 30;
+        if (avgStdDev < 10) score -= 30; // Very uniform = probably not a product photo
         else if (avgStdDev > 40) score += 10;
         
         const avgMean = channels.reduce((sum: number, ch: any) => sum + ch.mean, 0) / channels.length;
-        if (avgMean > 200 && avgStdDev > 30) score += 15;
+        if (avgMean > 200 && avgStdDev > 30) score += 15; // White background with detail = product photo
       } catch { /* ignore */ }
     }
     
@@ -259,14 +276,87 @@ async function scoreImage(imageUrl: string): Promise<{
 }
 
 /**
- * Generate a clean 4K product image using AI (Forge ImageService)
- * Takes a reference image URL and generates a retailer-ready product photo
+ * Determine the best upscale factor based on current dimensions
+ * Target: at least 2000px on the shortest side (e-commerce standard)
+ */
+function getUpscaleFactor(width: number, height: number): number {
+  const minDim = Math.min(width, height);
+  if (minDim >= 2000) return 0; // Already large enough, no upscale needed
+  if (minDim >= 1000) return 2; // 1000-1999 → 2x = 2000-3998
+  return 4; // < 1000 → 4x
+}
+
+/**
+ * Upload a scraped image to S3 and optionally upscale with Real-ESRGAN
+ * Returns the final S3 URL and dimensions
+ */
+async function uploadAndUpscaleImage(
+  sku: string,
+  buffer: Buffer,
+  width: number,
+  height: number,
+  index: number,
+  source: string
+): Promise<{ s3Url: string; s3Key: string; width: number; height: number; sizeKB: number; upscaled: boolean } | null> {
+  try {
+    const ext = 'png'; // Use PNG for best quality
+    
+    // Determine if upscaling is needed
+    const scaleFactor = getUpscaleFactor(width, height);
+    
+    if (scaleFactor === 0) {
+      // Already large enough — upload directly
+      const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${width}x${height}_${nanoid(6)}.${ext}`;
+      const { url: s3Url } = await storagePut(s3Key, buffer, 'image/png');
+      console.log(`[HQ Upload] ✓ Already HQ (${width}x${height}), uploaded directly: ${s3Key}`);
+      return { s3Url, s3Key, width, height, sizeKB: buffer.length / 1024, upscaled: false };
+    }
+    
+    // Upload original to S3 first so Real-ESRGAN can access it
+    const tempKey = `scrapes/temp_upscale_${nanoid(8)}.${ext}`;
+    const { url: tempS3Url } = await storagePut(tempKey, buffer, 'image/png');
+    
+    // AI upscale with Real-ESRGAN
+    console.log(`[HQ Pipeline] Upscaling ${width}x${height} by ${scaleFactor}x...`);
+    const upscaledBuffer = await aiUpscale(tempS3Url, scaleFactor);
+    
+    if (upscaledBuffer && upscaledBuffer.length > buffer.length) {
+      // Verify dimensions with sharp if available
+      let newW = width * scaleFactor;
+      let newH = height * scaleFactor;
+      const sharp = await getSharp();
+      if (sharp) {
+        try {
+          const meta = await sharp(upscaledBuffer).metadata();
+          newW = meta.width || newW;
+          newH = meta.height || newH;
+        } catch { /* use calculated */ }
+      }
+      
+      const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${newW}x${newH}_${nanoid(6)}.${ext}`;
+      const { url: s3Url } = await storagePut(s3Key, upscaledBuffer, 'image/png');
+      console.log(`[HQ Upload] ✓ Upscaled ${width}x${height} → ${newW}x${newH} (${(upscaledBuffer.length / 1024).toFixed(1)}KB): ${s3Key}`);
+      return { s3Url, s3Key, width: newW, height: newH, sizeKB: upscaledBuffer.length / 1024, upscaled: true };
+    }
+    
+    // Upscale failed — use the original (already uploaded as temp)
+    console.warn(`[HQ Pipeline] Upscale failed, using original ${width}x${height}`);
+    const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${width}x${height}_${nanoid(6)}.${ext}`;
+    const { url: s3Url } = await storagePut(s3Key, buffer, 'image/png');
+    return { s3Url, s3Key, width, height, sizeKB: buffer.length / 1024, upscaled: false };
+  } catch (err) {
+    console.error(`[HQ Upload] Failed for image ${index}: ${err}`);
+    return null;
+  }
+}
+
+/**
+ * FALLBACK: Generate a product image using Forge AI (only when not enough scraped images)
  */
 async function generateProductImage(
   referenceImageUrl: string,
   productName: string | null,
-  brand: string | null,
-  variant: 'main' | 'angle' | 'detail'
+  brand: string | null
 ): Promise<{ buffer: Buffer; width: number; height: number } | null> {
   if (!FORGE_API_URL || !FORGE_API_KEY) {
     console.log('[AI Gen] Forge API not configured, skipping AI generation');
@@ -275,41 +365,17 @@ async function generateProductImage(
 
   const productDesc = [brand, productName].filter(Boolean).join(' ') || 'this product';
   
-  // Different prompts for different angles/variants
-  const prompts: Record<string, string> = {
-    main: `Generate a professional e-commerce product photograph of ${productDesc}. This must be an exact 1:1 faithful reproduction of the product shown in the reference image. Requirements:
+  const prompt = `Generate a professional e-commerce product photograph of ${productDesc}. This must be an exact 1:1 faithful reproduction of the product shown in the reference image. Requirements:
 - Pure white background (#FFFFFF), absolutely no shadows, no reflections, no gradients
 - Product centered in frame, filling approximately 80-85% of the image area
 - Preserve ALL labels, text, branding, logos, colors, and packaging details EXACTLY as shown in the reference
 - Professional studio lighting: soft, even, diffused light from multiple angles to eliminate all shadows
-- Ultra-sharp focus on every detail of the product
+- Ultra-sharp focus on every detail
 - Square 1:1 aspect ratio
-- Suitable for Amazon, Walmart, eBay, and all major retailer product listings
-- No props, no lifestyle elements, no decorations, no surface — product only floating on pure white`,
-
-    angle: `Generate a professional e-commerce product photograph of ${productDesc} from a slightly different angle than the reference image. Requirements:
-- Pure white background (#FFFFFF), no shadows, no reflections
-- Show the product from a 30-45 degree angle to reveal depth and side details
-- Preserve ALL branding, text, colors, and design elements exactly as the original product
-- Professional studio lighting, ultra-sharp focus
-- Square 1:1 aspect ratio
-- Retailer-compliant product photography standard
-- No props, no background elements — product only on pure white`,
-
-    detail: `Generate a professional e-commerce product photograph of ${productDesc} showing a close-up detail view. Requirements:
-- Pure white background (#FFFFFF), no shadows
-- Focus on the product's key distinguishing features (cap, label, texture, branding details)
-- Preserve ALL text, logos, and design elements with perfect accuracy
-- Macro-style professional studio photography
-- Square 1:1 aspect ratio
-- Ultra-sharp, high detail rendering
-- No props — product detail only on pure white`,
-  };
-
-  const prompt = prompts[variant] || prompts.main;
+- No props, no decorations — product only on pure white`;
 
   try {
-    console.log(`[AI Gen] Generating ${variant} image for ${productDesc}...`);
+    console.log(`[AI Gen] FALLBACK: Generating image for ${productDesc}...`);
     
     const baseUrl = FORGE_API_URL.endsWith('/') ? FORGE_API_URL : FORGE_API_URL + '/';
     const fullUrl = new URL('images.v1.ImageService/GenerateImage', baseUrl).toString();
@@ -329,7 +395,7 @@ async function generateProductImage(
           mimeType: 'image/jpeg'
         }]
       }),
-      signal: AbortSignal.timeout(90000), // 90s hard timeout for AI image generation
+      signal: AbortSignal.timeout(90000), // 90s hard timeout
     });
 
     if (!response.ok) {
@@ -348,56 +414,19 @@ async function generateProductImage(
     }
 
     const aiBuffer = Buffer.from(result.image.b64Json, 'base64');
-    console.log(`[AI Gen] Generated ${variant}: 1024x1024, ${(aiBuffer.length / 1024).toFixed(1)}KB`);
-
-    // Upload 1024x1024 to S3 first so Real-ESRGAN can access it
-    const tempKey = `scrapes/temp_upscale_${nanoid(8)}.png`;
-    const { url: tempS3Url } = await storagePut(tempKey, aiBuffer, 'image/png');
-    console.log(`[AI Gen] Temp upload for upscaling: ${tempS3Url.substring(0, 60)}...`);
-
-    // AI upscale with Real-ESRGAN (4x = 1024→4096)
-    const upscaledBuffer = await aiUpscale(tempS3Url, 4);
-    if (upscaledBuffer && upscaledBuffer.length > aiBuffer.length) {
-      // Verify dimensions with sharp if available
-      let w = 4096, h = 4096;
-      const sharp = await getSharp();
-      if (sharp) {
-        try {
-          const meta = await sharp(upscaledBuffer).metadata();
-          w = meta.width || 4096;
-          h = meta.height || 4096;
-        } catch { /* use defaults */ }
-      }
-      console.log(`[AI Gen] Real-ESRGAN upscaled to ${w}x${h}, ${(upscaledBuffer.length / 1024).toFixed(1)}KB`);
-      return { buffer: upscaledBuffer, width: w, height: h };
-    }
-
-    // Fallback: try sharp lanczos3 if Real-ESRGAN failed
-    const sharp2 = await getSharp();
-    if (sharp2) {
-      try {
-        const upscaled = await sharp2(aiBuffer)
-          .resize(4096, 4096, { kernel: 'lanczos3', fit: 'fill' })
-          .png({ quality: 100, compressionLevel: 6 })
-          .toBuffer();
-        console.log(`[AI Gen] Sharp fallback upscale to 4096x4096, ${(upscaled.length / 1024).toFixed(1)}KB`);
-        return { buffer: upscaled, width: 4096, height: 4096 };
-      } catch (e) {
-        console.warn(`[AI Gen] Sharp upscale also failed: ${e}`);
-      }
-    }
-
-    // Last resort: return 1024x1024
-    console.warn(`[AI Gen] No upscaling available, returning 1024x1024`);
+    console.log(`[AI Gen] Generated: 1024x1024, ${(aiBuffer.length / 1024).toFixed(1)}KB`);
     return { buffer: aiBuffer, width: 1024, height: 1024 };
   } catch (err) {
-    console.error(`[AI Gen] Error generating ${variant} image: ${err}`);
+    console.error(`[AI Gen] Error: ${err}`);
     return null;
   }
 }
 
+// Minimum number of images we want in the output
+const TARGET_IMAGE_COUNT = 3;
+
 /**
- * Main HQ Pipeline - AI GENERATION with fallbacks
+ * Main HQ Pipeline - SCRAPE-FIRST with AI fallback
  */
 export async function processImagesHQ(
   sku: string,
@@ -414,14 +443,14 @@ export async function processImagesHQ(
     processingSteps: [],
   };
   
-  console.log(`[HQ Pipeline] Processing ${scrapedImageUrls.length} images for SKU ${sku}`);
+  console.log(`[HQ Pipeline] Processing ${scrapedImageUrls.length} scraped images for SKU ${sku}`);
   
   if (scrapedImageUrls.length === 0) {
     result.processingSteps.push('No images to process');
     return result;
   }
   
-  // Step 1: Pre-filter by URL patterns (FREE, instant)
+  // ===== STEP 1: Pre-filter by URL patterns (FREE, instant) =====
   result.processingSteps.push('Pre-filtering by URL patterns...');
   const preFiltered = preFilterByUrl(scrapedImageUrls);
   console.log(`[HQ Pipeline] Pre-filter: ${scrapedImageUrls.length} → ${preFiltered.length} images`);
@@ -432,10 +461,10 @@ export async function processImagesHQ(
     result.processingSteps.push('Pre-filter fallback: using all original URLs');
   }
   
-  // Step 2: Score images IN PARALLEL (first 10)
+  // ===== STEP 2: Score images IN PARALLEL (first 15) =====
   const scoreStart = Date.now();
   result.processingSteps.push('Scoring images...');
-  const imagesToScore = urlsToScore.slice(0, 10);
+  const imagesToScore = urlsToScore.slice(0, 15); // Score more to have better selection
   
   const scoreResults = await Promise.all(
     imagesToScore.map(async (url) => {
@@ -460,7 +489,23 @@ export async function processImagesHQ(
       .sort((a, b) => b.sizeKB - a.sizeKB);
   }
   
+  // Deduplicate by similar dimensions (avoid multiple copies of same image at different sizes)
+  const deduped: typeof scoredImages = [];
   for (const img of scoredImages) {
+    const isDupe = deduped.some(existing => {
+      if (img.width > 0 && existing.width > 0) {
+        const wRatio = img.width / existing.width;
+        const hRatio = img.height / existing.height;
+        // Same aspect ratio and similar size = likely same image
+        return Math.abs(wRatio - hRatio) < 0.1 && wRatio > 0.8 && wRatio < 1.2;
+      }
+      return false;
+    });
+    if (!isDupe) deduped.push(img);
+  }
+  scoredImages = deduped.length > 0 ? deduped : scoredImages;
+  
+  for (const img of scoredImages.slice(0, 5)) {
     console.log(`[HQ Pipeline] ✓ Score ${img.score}: ${img.url.substring(0, 60)}... (${img.width}x${img.height}, ${img.sizeKB.toFixed(1)}KB)`);
   }
   
@@ -470,99 +515,136 @@ export async function processImagesHQ(
     return result;
   }
   
-  // Step 3: Pick the best reference image for AI generation
-  const bestRef = scoredImages[0];
-  console.log(`[HQ Pipeline] Best reference: ${bestRef.url.substring(0, 80)}... (score: ${bestRef.score})`);
+  // ===== STEP 3: Upload & upscale top scraped images IN PARALLEL =====
+  const topImages = scoredImages.slice(0, 5); // Take top 5 for upscaling
+  const upscaleStart = Date.now();
+  result.processingSteps.push(`Uploading & upscaling top ${topImages.length} scraped images in parallel...`);
   
-  // First, upload the best reference to S3 so the AI API can access it reliably
-  let referenceUrl = bestRef.url;
-  if (bestRef.buffer) {
-    try {
-      const refKey = `scrapes/${sku}/ref_${nanoid(6)}.jpg`;
-      const { url: s3RefUrl } = await storagePut(refKey, bestRef.buffer, 'image/jpeg');
-      referenceUrl = s3RefUrl;
-      console.log(`[HQ Pipeline] Reference uploaded to S3: ${s3RefUrl.substring(0, 60)}...`);
-    } catch (e) {
-      console.warn(`[HQ Pipeline] Failed to upload reference to S3, using original URL: ${e}`);
-    }
-  }
-  
-  // Step 4: Generate AI product images (3 variants) IN PARALLEL
-  const variants: Array<'main' | 'angle' | 'detail'> = ['main', 'angle', 'detail'];
-  result.processingSteps.push('Generating 3 AI product images in parallel (each: Forge gen ~15s + S3 upload + Real-ESRGAN upscale ~4-60s)...');
-  
-  const aiStartTime = Date.now();
-  const aiResults = await Promise.allSettled(
-    variants.map(variant => generateProductImage(referenceUrl, productName || null, brand || null, variant))
+  const upscaleResults = await Promise.allSettled(
+    topImages.map((img, idx) =>
+      uploadAndUpscaleImage(sku, img.buffer!, img.width, img.height, idx + 1, 'scraped')
+    )
   );
-  const aiElapsed = ((Date.now() - aiStartTime) / 1000).toFixed(1);
-  console.log(`[HQ Pipeline] AI generation + upscaling completed in ${aiElapsed}s`);
-  result.processingSteps.push(`AI gen + upscale completed in ${aiElapsed}s`);
   
-  let aiSuccessCount = 0;
+  const upscaleElapsed = ((Date.now() - upscaleStart) / 1000).toFixed(1);
+  let upscaledCount = 0;
   
-  // Upload all successful AI images to S3 in parallel
-  const uploadPromises = aiResults.map(async (settled, idx) => {
-    const variant = variants[idx];
-    if (settled.status === 'rejected' || !settled.value) {
-      console.warn(`[HQ Pipeline] AI generation failed for ${variant} variant`);
-      return;
-    }
-    const aiResult = settled.value;
-    try {
-      const s3Key = `scrapes/${sku}/AI_${variant}_${aiResult.width}x${aiResult.height}_${nanoid(6)}.png`;
-      const { url: s3Url } = await storagePut(s3Key, aiResult.buffer, 'image/png');
-      
+  for (let i = 0; i < upscaleResults.length; i++) {
+    const settled = upscaleResults[i];
+    if (settled.status === 'fulfilled' && settled.value) {
+      const uploaded = settled.value;
       result.images.push({
-        originalUrl: referenceUrl,
-        processedUrl: s3Url,
-        width: aiResult.width,
-        height: aiResult.height,
-        sizeKB: aiResult.buffer.length / 1024,
-        source: 'ai_generated',
-        isHQ: true,
-        score: 100,
-      });
-      
-      aiSuccessCount++;
-      console.log(`[HQ Pipeline] ✓ AI ${variant}: ${aiResult.width}x${aiResult.height}, ${(aiResult.buffer.length / 1024).toFixed(1)}KB → ${s3Key}`);
-    } catch (err) {
-      console.error(`[HQ Pipeline] Failed to upload AI ${variant} image: ${err}`);
-    }
-  });
-  
-  await Promise.allSettled(uploadPromises);
-  result.processingSteps.push(`AI generated ${aiSuccessCount}/3 images in ${((Date.now() - aiStartTime) / 1000).toFixed(1)}s`);
-  
-  // Step 5: Fallback - if AI generation failed, upload best scraped images directly
-  if (result.images.length === 0) {
-    console.log(`[HQ Pipeline] AI generation failed, falling back to scraped images`);
-    result.processingSteps.push('AI fallback: using original scraped images');
-    
-    const topImages = scoredImages.slice(0, 3);
-    for (const img of topImages) {
-      result.images.push({
-        originalUrl: img.url,
-        processedUrl: img.url,
-        width: img.width,
-        height: img.height,
-        sizeKB: img.sizeKB,
+        originalUrl: topImages[i].url,
+        processedUrl: uploaded.s3Url,
+        width: uploaded.width,
+        height: uploaded.height,
+        sizeKB: uploaded.sizeKB,
         source: 'scraper',
-        isHQ: img.width >= 1500 || img.height >= 1500,
-        score: img.score,
+        isHQ: uploaded.width >= 2000 || uploaded.height >= 2000,
+        score: topImages[i].score,
       });
+      if (uploaded.upscaled) upscaledCount++;
+      // Cost: ~$0.002 per Real-ESRGAN upscale
+      if (uploaded.upscaled) result.totalCost += 0.002;
     }
   }
   
-  result.processingSteps.push(`Pipeline complete: ${result.images.length} images (${aiSuccessCount} AI-generated)`);
-  console.log(`[HQ Pipeline] Complete: ${result.images.length} images (${aiSuccessCount} AI-generated)`);
+  result.processingSteps.push(`Uploaded ${result.images.length}/${topImages.length} images (${upscaledCount} upscaled) in ${upscaleElapsed}s`);
+  console.log(`[HQ Pipeline] Uploaded ${result.images.length} scraped images (${upscaledCount} upscaled) in ${upscaleElapsed}s`);
+  
+  // ===== STEP 4: FALLBACK — If < TARGET_IMAGE_COUNT, generate AI extras =====
+  if (result.images.length < TARGET_IMAGE_COUNT && result.images.length > 0) {
+    const needed = TARGET_IMAGE_COUNT - result.images.length;
+    console.log(`[HQ Pipeline] Only ${result.images.length} scraped images, generating ${needed} AI extras as fallback`);
+    result.processingSteps.push(`Fallback: generating ${needed} AI images (only ${result.images.length} scraped available)...`);
+    
+    // Use the best scraped image as reference for AI generation
+    const bestRef = result.images[0];
+    const aiStart = Date.now();
+    
+    const aiPromises = Array.from({ length: needed }, () =>
+      generateProductImage(bestRef.processedUrl, productName || null, brand || null)
+    );
+    
+    const aiResults = await Promise.allSettled(aiPromises);
+    
+    for (const settled of aiResults) {
+      if (settled.status === 'fulfilled' && settled.value) {
+        const aiResult = settled.value;
+        // Upload AI image and upscale it too
+        const uploaded = await uploadAndUpscaleImage(
+          sku, aiResult.buffer, aiResult.width, aiResult.height,
+          result.images.length + 1, 'ai_fallback'
+        );
+        if (uploaded) {
+          result.images.push({
+            originalUrl: bestRef.processedUrl,
+            processedUrl: uploaded.s3Url,
+            width: uploaded.width,
+            height: uploaded.height,
+            sizeKB: uploaded.sizeKB,
+            source: 'ai_generated',
+            isHQ: uploaded.width >= 2000 || uploaded.height >= 2000,
+            score: 70, // AI-generated gets a lower score than real photos
+          });
+          if (uploaded.upscaled) result.totalCost += 0.002;
+        }
+      }
+    }
+    
+    const aiElapsed = ((Date.now() - aiStart) / 1000).toFixed(1);
+    result.processingSteps.push(`AI fallback: generated ${result.images.length - (topImages.length)} extras in ${aiElapsed}s`);
+  } else if (result.images.length === 0) {
+    // No scraped images at all — full AI generation as last resort
+    console.log(`[HQ Pipeline] No scraped images available, full AI generation fallback`);
+    result.processingSteps.push('Full AI fallback: no scraped images, generating from scratch...');
+    
+    // Use the best scored image URL (even if we couldn't download it) as reference
+    const bestUrl = scoredImages[0]?.url || scrapedImageUrls[0];
+    const aiStart = Date.now();
+    
+    const aiPromises = Array.from({ length: TARGET_IMAGE_COUNT }, () =>
+      generateProductImage(bestUrl, productName || null, brand || null)
+    );
+    
+    const aiResults = await Promise.allSettled(aiPromises);
+    
+    for (const settled of aiResults) {
+      if (settled.status === 'fulfilled' && settled.value) {
+        const aiResult = settled.value;
+        const uploaded = await uploadAndUpscaleImage(
+          sku, aiResult.buffer, aiResult.width, aiResult.height,
+          result.images.length + 1, 'ai_generated'
+        );
+        if (uploaded) {
+          result.images.push({
+            originalUrl: bestUrl,
+            processedUrl: uploaded.s3Url,
+            width: uploaded.width,
+            height: uploaded.height,
+            sizeKB: uploaded.sizeKB,
+            source: 'ai_generated',
+            isHQ: uploaded.width >= 2000 || uploaded.height >= 2000,
+            score: 60,
+          });
+          if (uploaded.upscaled) result.totalCost += 0.002;
+        }
+      }
+    }
+    
+    const aiElapsed = ((Date.now() - aiStart) / 1000).toFixed(1);
+    result.processingSteps.push(`Full AI fallback: generated ${result.images.length} images in ${aiElapsed}s`);
+  }
+  
+  result.processingSteps.push(`Pipeline complete: ${result.images.length} images (${result.images.filter(i => i.source === 'scraper').length} scraped, ${result.images.filter(i => i.source === 'ai_generated').length} AI-generated)`);
+  console.log(`[HQ Pipeline] Complete: ${result.images.length} images (${result.images.filter(i => i.source === 'scraper').length} scraped, ${result.images.filter(i => i.source === 'ai_generated').length} AI)`);
   
   return result;
 }
 
 /**
  * Upload processed HQ images to S3 - IN PARALLEL
- * For AI-generated images, they're already uploaded, so we just return the existing URLs
+ * For images already in S3 (from uploadAndUpscaleImage), just return existing URLs
  */
 export async function uploadHQImages(
   sku: string,
@@ -576,14 +658,14 @@ export async function uploadHQImages(
   const uploadResults = await Promise.all(
     images.map(async (img, i) => {
       try {
-        // AI-generated images are already uploaded to S3 during generation
-        if (img.source === 'ai_generated' && img.processedUrl.includes('cloudfront.net')) {
-          const s3Key = img.processedUrl.split('/').slice(-3).join('/'); // Extract key from URL
-          console.log(`[HQ Upload] ✓ AI image already in S3: ${s3Key} (${img.width}x${img.height})`);
+        // Images already uploaded to S3 during the pipeline
+        if (img.processedUrl.includes('cloudfront.net') || img.processedUrl.includes('s3.')) {
+          const s3Key = img.processedUrl.split('/').slice(-4).join('/'); // Extract key from URL
+          console.log(`[HQ Upload] ✓ Already in S3: ${s3Key} (${img.width}x${img.height})`);
           return { s3Key, s3Url: img.processedUrl, width: img.width, height: img.height };
         }
         
-        // Download and re-upload scraped images
+        // Download and re-upload if not in S3 yet (shouldn't happen with new pipeline)
         const response = await fetch(img.processedUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
           signal: AbortSignal.timeout(15000),

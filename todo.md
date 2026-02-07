@@ -378,3 +378,13 @@
 - [x] Added processingSteps detail to scrape_logs for full pipeline trace
 - [x] Pushed scrape_logs table migration to production DB
 - [x] All 41 tests passing
+
+## Redesign: Prioritize scraped images over AI generation (Feb 7, 2026)
+- [x] Rewrite HQ pipeline: scrape best images → Real-ESRGAN upscale → Forge AI only as fallback
+- [x] Score and pick top 3-5 scraped images (deduped, sorted by quality)
+- [x] Real-ESRGAN upscale scraped images directly (smart scaling: 4x for <1000px, 2x for 1000-2000px, skip for >2000px)
+- [x] Only use Forge AI when < 3 good scraped images found (as fallback, not primary)
+- [x] Removed blurry Forge AI as primary path — scraped images are always preferred
+- [x] Added 429 rate limit retry with backoff for Replicate API (3 retries, parses retry-after)
+- [x] Tested end-to-end locally: 3 images in 51s (2 scraped + 1 AI fallback), cost $0.004
+- [x] All 41 tests passing
