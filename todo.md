@@ -304,3 +304,11 @@
 - [x] Falls back to original scraped images if AI generation fails entirely
 - [x] Verified: Order 270018 - 3 images at 4096x4096, 2.4-3.0MB each
 - [x] All 27 tests passing, production build clean
+
+## Bug: Scrape timed out at 180s on deployed server (Feb 6, 2026)
+- [x] Increased timeout from 180s to 360s (6 minutes)
+- [x] Parallelized AI generation: 3 variants generated simultaneously via Promise.allSettled
+- [x] Parallelized S3 uploads after AI generation
+- [x] Result: AI generation now completes in ~20s (was ~90s sequential), total scrape ~25s
+- [x] Verified: Order 270019 completed with 3 images at 4096x4096, 2.7-3.1MB each
+- [x] All 27 tests passing

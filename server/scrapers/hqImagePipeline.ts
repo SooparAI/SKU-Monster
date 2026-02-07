@@ -399,43 +399,50 @@ export async function processImagesHQ(
     }
   }
   
-  // Step 4: Generate AI product images (3 variants)
+  // Step 4: Generate AI product images (3 variants) IN PARALLEL
   const variants: Array<'main' | 'angle' | 'detail'> = ['main', 'angle', 'detail'];
-  result.processingSteps.push('Generating AI product images...');
+  result.processingSteps.push('Generating AI product images in parallel...');
+  
+  const aiStartTime = Date.now();
+  const aiResults = await Promise.allSettled(
+    variants.map(variant => generateProductImage(referenceUrl, productName || null, brand || null, variant))
+  );
+  console.log(`[HQ Pipeline] AI generation completed in ${((Date.now() - aiStartTime) / 1000).toFixed(1)}s`);
   
   let aiSuccessCount = 0;
   
-  for (const variant of variants) {
-    const aiResult = await generateProductImage(referenceUrl, productName || null, brand || null, variant);
-    
-    if (aiResult) {
-      // Upload AI-generated image directly to S3
-      try {
-        const s3Key = `scrapes/${sku}/AI_${variant}_${aiResult.width}x${aiResult.height}_${nanoid(6)}.png`;
-        const { url: s3Url } = await storagePut(s3Key, aiResult.buffer, 'image/png');
-        
-        result.images.push({
-          originalUrl: referenceUrl,
-          processedUrl: s3Url,
-          width: aiResult.width,
-          height: aiResult.height,
-          sizeKB: aiResult.buffer.length / 1024,
-          source: 'ai_generated',
-          isHQ: true,
-          score: 100,
-        });
-        
-        aiSuccessCount++;
-        console.log(`[HQ Pipeline] ✓ AI ${variant}: ${aiResult.width}x${aiResult.height}, ${(aiResult.buffer.length / 1024).toFixed(1)}KB → ${s3Key}`);
-      } catch (err) {
-        console.error(`[HQ Pipeline] Failed to upload AI ${variant} image: ${err}`);
-      }
-    } else {
+  // Upload all successful AI images to S3 in parallel
+  const uploadPromises = aiResults.map(async (settled, idx) => {
+    const variant = variants[idx];
+    if (settled.status === 'rejected' || !settled.value) {
       console.warn(`[HQ Pipeline] AI generation failed for ${variant} variant`);
+      return;
     }
-  }
+    const aiResult = settled.value;
+    try {
+      const s3Key = `scrapes/${sku}/AI_${variant}_${aiResult.width}x${aiResult.height}_${nanoid(6)}.png`;
+      const { url: s3Url } = await storagePut(s3Key, aiResult.buffer, 'image/png');
+      
+      result.images.push({
+        originalUrl: referenceUrl,
+        processedUrl: s3Url,
+        width: aiResult.width,
+        height: aiResult.height,
+        sizeKB: aiResult.buffer.length / 1024,
+        source: 'ai_generated',
+        isHQ: true,
+        score: 100,
+      });
+      
+      aiSuccessCount++;
+      console.log(`[HQ Pipeline] ✓ AI ${variant}: ${aiResult.width}x${aiResult.height}, ${(aiResult.buffer.length / 1024).toFixed(1)}KB → ${s3Key}`);
+    } catch (err) {
+      console.error(`[HQ Pipeline] Failed to upload AI ${variant} image: ${err}`);
+    }
+  });
   
-  result.processingSteps.push(`AI generated ${aiSuccessCount}/3 images`);
+  await Promise.allSettled(uploadPromises);
+  result.processingSteps.push(`AI generated ${aiSuccessCount}/3 images in ${((Date.now() - aiStartTime) / 1000).toFixed(1)}s`);
   
   // Step 5: Fallback - if AI generation failed, upload best scraped images directly
   if (result.images.length === 0) {

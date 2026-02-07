@@ -65,7 +65,7 @@ export interface ScrapeJobResult {
 }
 
 // ===== OPTIMIZED CONSTANTS =====
-const SKU_TIMEOUT_MS = 3 * 60 * 1000;
+const SKU_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes to accommodate parallel AI image generation
 const PAGE_TIMEOUT_MS = 10000;
 const PARALLEL_LIMIT = 5;
 const MAX_STORE_IMAGES = 10;
