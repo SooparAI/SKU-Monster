@@ -1,0 +1,20 @@
+{
+  "query": "SELECT * FROM orderItems WHERE sku = '7340032806168' ORDER BY id DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT * FROM orderItems WHERE sku = '7340032806168' ORDER BY id DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "300012",
+      "orderId": "300006",
+      "sku": "7340032806168",
+      "status": "failed",
+      "imagesFound": "0",
+      "errorMessage": "NULL",
+      "createdAt": "2026-02-07 19:49:13",
+      "completedAt": "2026-02-07 19:52:26"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\torderId\tsku\tstatus\timagesFound\terrorMessage\tcreatedAt\tcompletedAt\n300012\t300006\t7340032806168\tfailed\t0\tNULL\t2026-02-07 19:49:13\t2026-02-07 19:52:26\n",
+  "stderr": "",
+  "execution_time_ms": 47
+}

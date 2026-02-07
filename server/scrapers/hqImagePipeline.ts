@@ -190,6 +190,29 @@ function preFilterByUrl(urls: string[]): string[] {
 /**
  * Score an image - downloads once and returns buffer for reuse
  */
+// Browser-like headers for downloading images from retailer CDNs
+function getBrowserHeaders(imageUrl: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Cache-Control': 'no-cache',
+    'Sec-Ch-Ua': '"Chromium";v="131", "Google Chrome";v="131"',
+    'Sec-Ch-Ua-Mobile': '?0',
+    'Sec-Ch-Ua-Platform': '"Windows"',
+    'Sec-Fetch-Dest': 'image',
+    'Sec-Fetch-Mode': 'no-cors',
+    'Sec-Fetch-Site': 'cross-site',
+  };
+  // Add Referer based on the image domain
+  try {
+    const url = new URL(imageUrl);
+    headers['Referer'] = `${url.protocol}//${url.hostname}/`;
+  } catch { /* ignore */ }
+  return headers;
+}
+
 async function scoreImage(imageUrl: string): Promise<{
   score: number;
   width: number;
@@ -197,16 +220,27 @@ async function scoreImage(imageUrl: string): Promise<{
   sizeKB: number;
   buffer: Buffer | null;
 }> {
-  try {
-    const response = await fetch(imageUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
-      signal: AbortSignal.timeout(10000),
-    });
-    
-    if (!response.ok) {
-      console.log(`[HQ Score] HTTP ${response.status} for ${imageUrl.substring(0, 60)}...`);
-      return { score: 0, width: 0, height: 0, sizeKB: 0, buffer: null };
-    }
+  // Try up to 2 times with different strategies
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const headers = attempt === 0 
+        ? getBrowserHeaders(imageUrl)
+        : { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15', 'Accept': '*/*' };
+      
+      const response = await fetch(imageUrl, {
+        headers,
+        signal: AbortSignal.timeout(15000), // 15s timeout (increased from 10s)
+        redirect: 'follow',
+      });
+      
+      if (!response.ok) {
+        if (attempt === 0) {
+          console.log(`[HQ Score] HTTP ${response.status} for ${imageUrl.substring(0, 60)}... (retrying)`);
+          continue;
+        }
+        console.log(`[HQ Score] HTTP ${response.status} for ${imageUrl.substring(0, 60)}...`);
+        return { score: 0, width: 0, height: 0, sizeKB: 0, buffer: null };
+      }
     
     const buffer = Buffer.from(await response.arrayBuffer());
     const sizeKB = buffer.length / 1024;
@@ -269,10 +303,17 @@ async function scoreImage(imageUrl: string): Promise<{
     const finalScore = Math.max(0, Math.min(100, score));
     console.log(`[HQ Score] ${finalScore}: ${imageUrl.substring(0, 60)}... (${width}x${height}, ${sizeKB.toFixed(1)}KB)`);
     return { score: finalScore, width, height, sizeKB, buffer };
-  } catch (err) {
-    console.error(`[HQ Score] Error scoring ${imageUrl.substring(0, 60)}: ${err}`);
-    return { score: 0, width: 0, height: 0, sizeKB: 0, buffer: null };
+    } catch (err) {
+      if (attempt === 0) {
+        console.log(`[HQ Score] Error on attempt 1 for ${imageUrl.substring(0, 60)}...: ${err instanceof Error ? err.message : err} (retrying)`);
+        continue;
+      }
+      console.error(`[HQ Score] Error scoring ${imageUrl.substring(0, 60)}: ${err}`);
+      return { score: 0, width: 0, height: 0, sizeKB: 0, buffer: null };
+    }
   }
+  // All attempts failed
+  return { score: 0, width: 0, height: 0, sizeKB: 0, buffer: null };
 }
 
 /**
@@ -461,10 +502,10 @@ export async function processImagesHQ(
     result.processingSteps.push('Pre-filter fallback: using all original URLs');
   }
   
-  // ===== STEP 2: Score images IN PARALLEL (first 15) =====
+  // ===== STEP 2: Score images IN PARALLEL (first 25 — wider net for flaky CDNs) =====
   const scoreStart = Date.now();
   result.processingSteps.push('Scoring images...');
-  const imagesToScore = urlsToScore.slice(0, 15); // Score more to have better selection
+  const imagesToScore = urlsToScore.slice(0, 25); // Cast wider net since many CDNs block downloads
   
   const scoreResults = await Promise.all(
     imagesToScore.map(async (url) => {
@@ -510,13 +551,13 @@ export async function processImagesHQ(
   }
   
   if (scoredImages.length === 0) {
-    result.processingSteps.push('No images could be downloaded');
-    console.error(`[HQ Pipeline] CRITICAL: No images could be downloaded for SKU ${sku}`);
-    return result;
+    // ALL downloads failed — fall through to AI generation below
+    console.error(`[HQ Pipeline] CRITICAL: No images could be downloaded for SKU ${sku}, falling back to AI generation`);
+    result.processingSteps.push('No images could be downloaded — falling back to AI generation');
   }
   
   // ===== STEP 3: Upload & upscale top scraped images IN PARALLEL =====
-  const topImages = scoredImages.slice(0, 5); // Take top 5 for upscaling
+  const topImages = scoredImages.slice(0, 4); // Take top 3-4 only
   const upscaleStart = Date.now();
   result.processingSteps.push(`Uploading & upscaling top ${topImages.length} scraped images in parallel...`);
   
@@ -553,7 +594,7 @@ export async function processImagesHQ(
   console.log(`[HQ Pipeline] Uploaded ${result.images.length} scraped images (${upscaledCount} upscaled) in ${upscaleElapsed}s`);
   
   // ===== STEP 4: FALLBACK — If < TARGET_IMAGE_COUNT, generate AI extras =====
-  if (result.images.length < TARGET_IMAGE_COUNT && result.images.length > 0) {
+  if (result.images.length > 0 && result.images.length < TARGET_IMAGE_COUNT) {
     const needed = TARGET_IMAGE_COUNT - result.images.length;
     console.log(`[HQ Pipeline] Only ${result.images.length} scraped images, generating ${needed} AI extras as fallback`);
     result.processingSteps.push(`Fallback: generating ${needed} AI images (only ${result.images.length} scraped available)...`);

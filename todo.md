@@ -388,3 +388,12 @@
 - [x] Added 429 rate limit retry with backoff for Replicate API (3 retries, parses retry-after)
 - [x] Tested end-to-end locally: 3 images in 51s (2 scraped + 1 AI fallback), cost $0.004
 - [x] All 41 tests passing
+
+## Bug: SKU 7340032806168 failed - all 15 image downloads blocked by retailer CDNs (Feb 7, 2026)
+- [x] Fixed scoreImage with full browser-like headers (Accept, Referer, Sec-Ch-Ua, etc.)
+- [x] Added retry with different User-Agent (Safari fallback) on download failure
+- [x] Increased download timeout from 10s to 15s
+- [x] Widened scoring net from 15 to 25 URLs (more chances to find downloadable images)
+- [x] Reduced output to top 3-4 images instead of 5 (less wasted upscaling)
+- [x] Fixed AI fallback: now triggers when ALL downloads fail (was returning 0 images before)
+- [x] All 41 tests passing
