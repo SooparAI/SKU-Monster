@@ -397,3 +397,9 @@
 - [x] Reduced output to top 3-4 images instead of 5 (less wasted upscaling)
 - [x] Fixed AI fallback: now triggers when ALL downloads fail (was returning 0 images before)
 - [x] All 41 tests passing
+
+## Live Order 300008 Monitoring Issues (Feb 7, 2026)
+- [x] Fix hard timeout: make dynamic based on SKU count (90s per SKU + 2 min buffer, min 5 min)
+- [x] Fix timeout handler: don't discard results if job actually completed after timeout fired
+- [x] Fix AI fallback: trigger for SKUs where Perplexity returns "Unknown product" and 0 images found
+- [x] Fix Real-ESRGAN GPU memory limit: skip upscale for images >1449px (>2M pixels) instead of retrying 3x and failing

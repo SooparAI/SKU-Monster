@@ -322,8 +322,21 @@ async function scoreImage(imageUrl: string): Promise<{
  */
 function getUpscaleFactor(width: number, height: number): number {
   const minDim = Math.min(width, height);
+  const maxDim = Math.max(width, height);
+  const totalPixels = width * height;
+  
   if (minDim >= 2000) return 0; // Already large enough, no upscale needed
-  if (minDim >= 1000) return 2; // 1000-1999 → 2x = 2000-3998
+  
+  // Real-ESRGAN GPU memory limit: ~2,096,704 pixels max input
+  // Skip upscale if the image would exceed GPU memory at any scale factor
+  if (minDim >= 1000) {
+    // 2x upscale: check if input fits in GPU memory
+    if (totalPixels > 2_000_000) return 0; // Too large for GPU, use as-is
+    return 2; // 1000-1414 → 2x = 2000-2828
+  }
+  
+  // 4x upscale for small images
+  if (totalPixels > 2_000_000) return 2; // Fallback to 2x if too large for 4x
   return 4; // < 1000 → 4x
 }
 
@@ -431,10 +444,12 @@ async function generateProductImage(
       },
       body: JSON.stringify({
         prompt,
-        original_images: [{
-          url: referenceImageUrl,
-          mimeType: 'image/jpeg'
-        }]
+        ...(referenceImageUrl ? {
+          original_images: [{
+            url: referenceImageUrl,
+            mimeType: 'image/jpeg'
+          }]
+        } : {})
       }),
       signal: AbortSignal.timeout(90000), // 90s hard timeout
     });
@@ -487,7 +502,49 @@ export async function processImagesHQ(
   console.log(`[HQ Pipeline] Processing ${scrapedImageUrls.length} scraped images for SKU ${sku}`);
   
   if (scrapedImageUrls.length === 0) {
-    result.processingSteps.push('No images to process');
+    // No scraped URLs at all — go straight to AI generation if we have product info
+    if (productName && productName !== 'unknown' && productName !== 'Unknown product' && productName !== 'Unknown Product') {
+      console.log(`[HQ Pipeline] No scraped images for ${sku}, attempting full AI generation for: ${productName}`);
+      result.processingSteps.push('No scraped images — attempting AI generation from product name...');
+      
+      const aiStart = Date.now();
+      const aiPromises = Array.from({ length: TARGET_IMAGE_COUNT }, () =>
+        generateProductImage('', productName || null, brand || null)
+      );
+      
+      const aiResults = await Promise.allSettled(aiPromises);
+      
+      for (const settled of aiResults) {
+        if (settled.status === 'fulfilled' && settled.value) {
+          const aiResult = settled.value;
+          const uploaded = await uploadAndUpscaleImage(
+            sku, aiResult.buffer, aiResult.width, aiResult.height,
+            result.images.length + 1, 'ai_generated'
+          );
+          if (uploaded) {
+            result.images.push({
+              originalUrl: '',
+              processedUrl: uploaded.s3Url,
+              width: uploaded.width,
+              height: uploaded.height,
+              sizeKB: uploaded.sizeKB,
+              source: 'ai_generated',
+              isHQ: uploaded.width >= 2000 || uploaded.height >= 2000,
+              score: 50,
+            });
+            if (uploaded.upscaled) result.totalCost += 0.002;
+          }
+        }
+      }
+      
+      const aiElapsed = ((Date.now() - aiStart) / 1000).toFixed(1);
+      result.processingSteps.push(`AI generation from product name: ${result.images.length} images in ${aiElapsed}s`);
+      console.log(`[HQ Pipeline] AI generation from product name: ${result.images.length} images in ${aiElapsed}s`);
+      return result;
+    }
+    
+    result.processingSteps.push('No images to process and no product info for AI generation');
+    console.log(`[HQ Pipeline] No images and no product info for SKU ${sku}`);
     return result;
   }
   

@@ -601,11 +601,17 @@ async function retryDbOp<T>(op: () => Promise<T>, label: string, retries = 3): P
 
 // Background job processor with robust error handling
 async function processScrapeJob(orderId: number, skus: string[]) {
-  const JOB_HARD_TIMEOUT = 8 * 60 * 1000; // 8 minutes absolute max (6 min SKU timeout + 2 min buffer for zip/upload)
+  // Dynamic timeout: 90s per SKU + 2 min buffer for zip creation/upload
+  // Minimum 5 min, so even 1-SKU jobs have breathing room
+  const JOB_HARD_TIMEOUT = Math.max(5 * 60 * 1000, skus.length * 90 * 1000 + 2 * 60 * 1000);
   let jobTimedOut = false;
+  let jobCompleted = false; // Track if job actually finished
+  
+  console.log(`[Job ${orderId}] Hard timeout set to ${Math.round(JOB_HARD_TIMEOUT / 1000)}s for ${skus.length} SKUs`);
   
   // Hard timeout that forces the job to fail if it runs too long
   const hardTimer = setTimeout(async () => {
+    if (jobCompleted) return; // Job already finished, don't interfere
     jobTimedOut = true;
     console.error(`[Job ${orderId}] HARD TIMEOUT (${JOB_HARD_TIMEOUT / 1000}s) - forcing failure`);
     try {
@@ -637,9 +643,13 @@ async function processScrapeJob(orderId: number, skus: string[]) {
       updateOrder(orderId, { processedSkus: processed }).catch(console.error);
     });
     
+    // Mark job as completed so hard timeout won't interfere
+    jobCompleted = true;
+    clearTimeout(hardTimer);
+    
     if (jobTimedOut) {
-      console.log(`[Job ${orderId}] Completed after hard timeout - ignoring results`);
-      return;
+      // Job finished after hard timeout fired — still save results since we have them
+      console.log(`[Job ${orderId}] Completed after hard timeout - saving results anyway`);
     }
     
     console.log(`runScrapeJob completed for order ${orderId}. Images: ${result.totalImages}, Failed: ${result.failedSkus}/${skus.length}`);
@@ -700,6 +710,8 @@ async function processScrapeJob(orderId: number, skus: string[]) {
       await autoRefundOrder(orderId, skus.length);
     }
   } catch (err) {
+    jobCompleted = true;
+    clearTimeout(hardTimer);
     if (jobTimedOut) return; // Hard timeout already handled it
     
     const errorMsg = err instanceof Error ? err.message : String(err);
@@ -738,7 +750,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
 // Runs every 2 minutes to detect and auto-fail orders stuck in 'processing'
 async function cleanupStuckOrders() {
   try {
-    const stuckOrders = await getStuckProcessingOrders(8 * 60 * 1000); // 8 min threshold (matches job hard timeout)
+    const stuckOrders = await getStuckProcessingOrders(30 * 60 * 1000); // 30 min threshold (generous, since large orders can take 20+ min)
     if (stuckOrders.length === 0) return;
     
     console.log(`[Stuck Cleanup] Found ${stuckOrders.length} stuck orders`);
@@ -757,7 +769,7 @@ async function cleanupStuckOrders() {
           if (item.status === 'pending' || item.status === 'processing') {
             await updateOrderItem(item.id, {
               status: 'failed',
-              errorMessage: 'Order timed out (stuck in processing > 8 min)',
+              errorMessage: 'Order timed out (stuck in processing > 30 min)',
               completedAt: new Date(),
             }).catch(console.error);
           }
