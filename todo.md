@@ -340,3 +340,17 @@
 - [x] Fix: Pipeline now works with just 1 UPC image (AI generates 3 variants from it)
 - [x] All 41 tests passing, TypeScript clean, dev server running
 - [ ] Test end-to-end on deployed server (requires publish)
+
+## Bug: Output images not at full scale (Feb 7, 2026)
+- [x] Investigated: S3 images ARE 4096x4096 PNG (2.9MB each) - confirmed with sharp metadata
+- [x] Images in zip are full resolution - the issue was jobs failing, not image size
+
+## Bug: Scrape jobs timing out at 240s on deployed server - 0 images (Feb 7, 2026)
+- [x] Root cause: Google/eBay/Amazon block requests from deployed server IP
+- [x] Fix: Replaced web scraping with Perplexity API for product identification + retailer URL discovery
+- [x] Fix: Perplexity identifies product (name, brand, description) + returns retailer page URLs
+- [x] Fix: Fetch images from retailer pages (Jomashop, Maxaroma, etc.) instead of Google/eBay/Amazon search
+- [x] Fix: Forge LLM as backup product identification if Perplexity fails
+- [x] Fix: Product info (name, brand) from Perplexity feeds into AI image generation for better prompts
+- [x] All 41 tests passing, TypeScript clean
+- [ ] Test end-to-end on deployed server (requires publish)

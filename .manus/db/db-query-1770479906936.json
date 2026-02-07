@@ -1,0 +1,52 @@
+{
+  "query": "SELECT si.id, si.sku, si.sourceStore, SUBSTRING(si.s3Url, 1, 150) as s3Url_short, oi.orderId FROM scrapedImages si JOIN orderItems oi ON si.orderItemId = oi.id WHERE oi.orderId IN (270018, 270019) ORDER BY si.id DESC LIMIT 10",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT si.id, si.sku, si.sourceStore, SUBSTRING(si.s3Url, 1, 150) as s3Url_short, oi.orderId FROM scrapedImages si JOIN orderItems oi ON si.orderItemId = oi.id WHERE oi.orderId IN (270018, 270019) ORDER BY si.id DESC LIMIT 10",
+  "rows": [
+    {
+      "id": "210033",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_angle_4096x4096_f6cyxx.png",
+      "orderId": "270019"
+    },
+    {
+      "id": "210032",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_detail_4096x4096_y5BeRu.png",
+      "orderId": "270019"
+    },
+    {
+      "id": "210031",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_main_4096x4096_J-xqb8.png",
+      "orderId": "270019"
+    },
+    {
+      "id": "210030",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_detail_4096x4096_ai-S6R.png",
+      "orderId": "270018"
+    },
+    {
+      "id": "210029",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_angle_4096x4096_0798lC.png",
+      "orderId": "270018"
+    },
+    {
+      "id": "210028",
+      "sku": "701666410164",
+      "sourceStore": "HQ Pipeline",
+      "s3Url_short": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_main_4096x4096_UmkJS-.png",
+      "orderId": "270018"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tsku\tsourceStore\ts3Url_short\torderId\n210033\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_angle_4096x4096_f6cyxx.png\t270019\n210032\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_detail_4096x4096_y5BeRu.png\t270019\n210031\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_main_4096x4096_J-xqb8.png\t270019\n210030\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_detail_4096x4096_ai-S6R.png\t270018\n210029\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_angle_4096x4096_0798lC.png\t270018\n210028\t701666410164\tHQ Pipeline\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/scrapes/701666410164/AI_main_4096x4096_UmkJS-.png\t270018\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

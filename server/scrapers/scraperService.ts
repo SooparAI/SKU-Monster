@@ -333,20 +333,21 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     errors.push(`UPC lookup failed: ${upcErr instanceof Error ? upcErr.message : String(upcErr)}`);
   }
 
-  // STEP 2: Run ALL image searches in PARALLEL (Google + eBay + Amazon simultaneously)
-  // Pass product name from UPC for better search results
-  console.log(`[${sku}] STEP 2: Parallel image search (UPC found ${allImages.length} images, product: ${productName || 'unknown'})...`);
+  // STEP 2: Perplexity API search + retailer page image extraction
+  console.log(`[${sku}] STEP 2: Perplexity + retailer image search (UPC found ${allImages.length} images, product: ${productName || 'unknown'})...`);
   try {
     const searchResult = await searchAllImageSources(sku, productName);
-    for (const imageUrl of searchResult.imageUrls) {
-      // Determine source from URL
-      let storeName = "Web Search";
-      if (imageUrl.includes('ebayimg.com')) storeName = "eBay";
-      else if (imageUrl.includes('media-amazon.com')) storeName = "Amazon";
-      else storeName = "Google Images";
-      allImages.push({ sku, storeName, sourceUrl: storeName.toLowerCase() + ".com", imageUrl });
+    // Update product info if Perplexity found better data
+    if (searchResult.productName && !productName) {
+      productName = searchResult.productName;
     }
-    console.log(`[${sku}] Image search found ${searchResult.imageUrls.length} images (Google: ${searchResult.sources.google || 0}, eBay: ${searchResult.sources.ebay || 0}, Amazon: ${searchResult.sources.amazon || 0})`);
+    if (searchResult.brand && !brand) {
+      brand = searchResult.brand;
+    }
+    for (const imageUrl of searchResult.imageUrls) {
+      allImages.push({ sku, storeName: "Retailer", sourceUrl: "perplexity", imageUrl });
+    }
+    console.log(`[${sku}] Image search found ${searchResult.imageUrls.length} images from retailers (product: ${searchResult.productName}, brand: ${searchResult.brand})`);
   } catch (searchErr) {
     console.error(`[${sku}] Image search error: ${searchErr}`);
     errors.push(`Image search failed: ${searchErr instanceof Error ? searchErr.message : String(searchErr)}`);
