@@ -65,7 +65,7 @@ export interface ScrapeJobResult {
 }
 
 // ===== OPTIMIZED CONSTANTS =====
-const SKU_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes to accommodate parallel AI image generation
+const SKU_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes max per SKU (AI gen has its own 90s timeout)
 const PAGE_TIMEOUT_MS = 10000;
 const PARALLEL_LIMIT = 5;
 const MAX_STORE_IMAGES = 10;
@@ -140,12 +140,16 @@ try { cleanupOrphanedProcesses(); } catch { /* ignore */ }
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> {
   return new Promise((resolve, reject) => {
+    let settled = false;
     const timer = setTimeout(() => {
-      reject(new Error(`'${operation}' timed out after ${timeoutMs}ms`));
+      if (!settled) {
+        settled = true;
+        reject(new Error(`'${operation}' timed out after ${timeoutMs}ms`));
+      }
     }, timeoutMs);
     promise
-      .then((result) => { clearTimeout(timer); resolve(result); })
-      .catch((err) => { clearTimeout(timer); reject(err); });
+      .then((result) => { if (!settled) { settled = true; clearTimeout(timer); resolve(result); } })
+      .catch((err) => { if (!settled) { settled = true; clearTimeout(timer); reject(err); } });
   });
 }
 
@@ -507,7 +511,7 @@ async function createZipFromResults(
         const image = result.images[i];
         if (image.s3Url) {
           try {
-            const response = await fetch(image.s3Url);
+            const response = await fetch(image.s3Url, { signal: AbortSignal.timeout(15000) });
             if (response.ok) {
               const buffer = Buffer.from(await response.arrayBuffer());
               const ext = image.s3Url.split(".").pop()?.split("?")[0] || "jpg";

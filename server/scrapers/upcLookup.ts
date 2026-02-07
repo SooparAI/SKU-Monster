@@ -42,6 +42,7 @@ export async function lookupUpc(upc: string): Promise<UpcLookupResult> {
           "Accept": "application/json",
           "User-Agent": "SKU-Image-Scraper/1.0",
         },
+        signal: AbortSignal.timeout(15000),
       }
     );
 

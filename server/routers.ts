@@ -19,6 +19,8 @@ import {
   updateOrderItem,
   getOrderItems,
   saveScrapedImages,
+  getStuckProcessingOrders,
+  getFailedOrdersWithoutRefund,
   SKU_PRICE,
 } from "./db";
 import {
@@ -493,70 +495,210 @@ export const appRouter = router({
       }));
     }),
   }),
+
+  // Admin router
+  admin: router({
+    // Backfill refunds for all failed orders that weren't refunded
+    backfillRefunds: protectedProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      }
+
+      const unrefundedOrders = await getFailedOrdersWithoutRefund();
+      let refundedCount = 0;
+      let totalRefunded = 0;
+
+      for (const order of unrefundedOrders) {
+        try {
+          const refundAmount = parseFloat(order.chargedAmount);
+          if (refundAmount <= 0) continue;
+
+          await addToUserBalance(order.userId, refundAmount);
+          await createTransaction({
+            userId: order.userId,
+            type: 'refund',
+            amount: refundAmount.toFixed(2),
+            status: 'completed',
+            description: `Backfill refund for failed Order #${order.id}`,
+          });
+
+          refundedCount++;
+          totalRefunded += refundAmount;
+          console.log(`[Admin Refund] Refunded $${refundAmount} for order #${order.id} to user ${order.userId}`);
+        } catch (err) {
+          console.error(`[Admin Refund] Failed to refund order #${order.id}:`, err);
+        }
+      }
+
+      return {
+        refundedCount,
+        totalRefunded,
+        message: `Refunded ${refundedCount} orders totaling $${totalRefunded.toFixed(2)}`,
+      };
+    }),
+
+    // Manually trigger stuck order cleanup
+    cleanupStuck: protectedProcedure.mutation(async ({ ctx }) => {
+      if (ctx.user.role !== 'admin') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+      }
+
+      const stuckOrders = await getStuckProcessingOrders(3 * 60 * 1000); // 3 min for manual trigger
+      let cleanedCount = 0;
+
+      for (const order of stuckOrders) {
+        try {
+          await updateOrder(order.id, { status: 'failed', completedAt: new Date() });
+          const items = await getOrderItems(order.id);
+          for (const item of items) {
+            if (item.status === 'pending' || item.status === 'processing') {
+              await updateOrderItem(item.id, {
+                status: 'failed',
+                errorMessage: 'Admin cleanup: stuck order',
+                completedAt: new Date(),
+              });
+            }
+          }
+          await autoRefundOrder(order.id, order.totalSkus || 1);
+          cleanedCount++;
+        } catch (err) {
+          console.error(`[Admin Cleanup] Failed for order #${order.id}:`, err);
+        }
+      }
+
+      return {
+        cleanedCount,
+        message: `Cleaned up ${cleanedCount} stuck orders`,
+      };
+    }),
+  }),
 });
 
-// Background job processor
+// Retry a DB operation up to 3 times with exponential backoff
+async function retryDbOp<T>(op: () => Promise<T>, label: string, retries = 3): Promise<T> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await op();
+    } catch (err) {
+      console.error(`[DB Retry] ${label} attempt ${attempt}/${retries} failed:`, err);
+      if (attempt === retries) throw err;
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
+  }
+  throw new Error(`[DB Retry] ${label} exhausted all retries`);
+}
+
+// Background job processor with robust error handling
 async function processScrapeJob(orderId: number, skus: string[]) {
+  const JOB_HARD_TIMEOUT = 5 * 60 * 1000; // 5 minutes absolute max
+  let jobTimedOut = false;
+  
+  // Hard timeout that forces the job to fail if it runs too long
+  const hardTimer = setTimeout(async () => {
+    jobTimedOut = true;
+    console.error(`[Job ${orderId}] HARD TIMEOUT (${JOB_HARD_TIMEOUT / 1000}s) - forcing failure`);
+    try {
+      await retryDbOp(
+        () => updateOrder(orderId, { status: "failed", completedAt: new Date() }),
+        `Hard timeout update order ${orderId}`
+      );
+      const items = await getOrderItems(orderId);
+      for (const item of items) {
+        if (item.status === 'pending' || item.status === 'processing') {
+          await updateOrderItem(item.id, {
+            status: 'failed',
+            errorMessage: 'Job timed out after 5 minutes',
+            completedAt: new Date(),
+          }).catch(console.error);
+        }
+      }
+      await autoRefundOrder(orderId, skus.length);
+    } catch (e) {
+      console.error(`[Job ${orderId}] Hard timeout cleanup failed:`, e);
+    }
+  }, JOB_HARD_TIMEOUT);
+
   try {
     console.log(`Starting scrape job ${orderId} with ${skus.length} SKUs`);
 
     const result = await runScrapeJob(orderId, skus, (processed, total) => {
       console.log(`Order ${orderId}: Processed ${processed}/${total} SKUs`);
-      // Update order progress
       updateOrder(orderId, { processedSkus: processed }).catch(console.error);
     });
-    console.log(`runScrapeJob completed for order ${orderId}, creating zip...`);
+    
+    if (jobTimedOut) {
+      console.log(`[Job ${orderId}] Completed after hard timeout - ignoring results`);
+      return;
+    }
+    
+    console.log(`runScrapeJob completed for order ${orderId}. Images: ${result.totalImages}, Failed: ${result.failedSkus}/${skus.length}`);
 
-    // Update order with results
-    await updateOrder(orderId, {
-      status: result.failedSkus === skus.length ? "failed" : result.failedSkus > 0 ? "partial" : "completed",
-      processedSkus: result.processedSkus,
-      zipFileUrl: result.zipUrl,
-      zipFileKey: result.zipKey,
-      completedAt: new Date(),
-    });
+    // Determine final status
+    const finalStatus = result.totalImages === 0 ? "failed" 
+      : result.failedSkus === skus.length ? "failed" 
+      : result.failedSkus > 0 ? "partial" 
+      : "completed";
+
+    // Update order with results (with retry)
+    await retryDbOp(
+      () => updateOrder(orderId, {
+        status: finalStatus,
+        processedSkus: result.processedSkus,
+        zipFileUrl: result.zipUrl,
+        zipFileKey: result.zipKey,
+        completedAt: new Date(),
+      }),
+      `Update order ${orderId} status to ${finalStatus}`
+    );
 
     // Save scraped images to database
     const orderItemsList = await getOrderItems(orderId);
     for (const skuResult of result.results) {
       const orderItem = orderItemsList.find((item) => item.sku === skuResult.sku);
       if (orderItem) {
-        await updateOrderItem(orderItem.id, {
-          status: skuResult.status === "partial" ? "completed" : skuResult.status,
-          imagesFound: skuResult.images.length,
-          errorMessage: skuResult.errors.length > 0 ? skuResult.errors.join('; ') : null,
-          completedAt: new Date(),
-        });
-
-        await saveScrapedImages(
-          skuResult.images.map((img) => ({
-            orderItemId: orderItem.id,
-            sku: skuResult.sku,
-            sourceStore: img.storeName,
-            sourceUrl: img.sourceUrl,
-            imageUrl: img.imageUrl,
-            s3Key: img.s3Key,
-            s3Url: img.s3Url,
-          }))
+        await retryDbOp(
+          () => updateOrderItem(orderItem.id, {
+            status: skuResult.images.length > 0 ? "completed" : "failed",
+            imagesFound: skuResult.images.length,
+            errorMessage: skuResult.errors.length > 0 ? skuResult.errors.join('; ') : null,
+            completedAt: new Date(),
+          }),
+          `Update order item ${orderItem.id}`
         );
+
+        if (skuResult.images.length > 0) {
+          await saveScrapedImages(
+            skuResult.images.map((img) => ({
+              orderItemId: orderItem.id,
+              sku: skuResult.sku,
+              sourceStore: img.storeName,
+              sourceUrl: img.sourceUrl,
+              imageUrl: img.imageUrl,
+              s3Key: img.s3Key,
+              s3Url: img.s3Url,
+            }))
+          ).catch(err => console.error(`Failed to save images for ${skuResult.sku}:`, err));
+        }
       }
     }
 
-    console.log(`Scrape job ${orderId} completed successfully. Total images: ${result.totalImages}, Zip URL: ${result.zipUrl}`);
+    console.log(`Scrape job ${orderId} completed: ${finalStatus}. Total images: ${result.totalImages}, Zip URL: ${result.zipUrl}`);
 
     // AUTO-REFUND: If ALL SKUs failed (0 images total), refund the user
-    if (result.totalImages === 0 && result.failedSkus === skus.length) {
+    if (result.totalImages === 0) {
       await autoRefundOrder(orderId, skus.length);
     }
   } catch (err) {
+    if (jobTimedOut) return; // Hard timeout already handled it
+    
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`Scrape job ${orderId} error:`, errorMsg, err instanceof Error ? err.stack : '');
     
-    // Update order status
-    await updateOrder(orderId, {
-      status: "failed",
-      completedAt: new Date(),
-    });
+    // Update order status (with retry)
+    await retryDbOp(
+      () => updateOrder(orderId, { status: "failed", completedAt: new Date() }),
+      `Fail order ${orderId}`
+    ).catch(e => console.error(`CRITICAL: Could not mark order ${orderId} as failed:`, e));
     
     // Also update all pending/processing order items with the error
     try {
@@ -567,7 +709,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
             status: 'failed',
             errorMessage: `Job error: ${errorMsg}`,
             completedAt: new Date(),
-          });
+          }).catch(console.error);
         }
       }
     } catch (updateErr) {
@@ -576,8 +718,56 @@ async function processScrapeJob(orderId: number, skus: string[]) {
 
     // AUTO-REFUND: Entire job crashed, refund the user
     await autoRefundOrder(orderId, skus.length);
+  } finally {
+    clearTimeout(hardTimer);
   }
 }
+
+// ===== STUCK JOB CLEANUP =====
+// Runs every 2 minutes to detect and auto-fail orders stuck in 'processing'
+async function cleanupStuckOrders() {
+  try {
+    const stuckOrders = await getStuckProcessingOrders(5 * 60 * 1000); // 5 min threshold
+    if (stuckOrders.length === 0) return;
+    
+    console.log(`[Stuck Cleanup] Found ${stuckOrders.length} stuck orders`);
+    for (const order of stuckOrders) {
+      console.log(`[Stuck Cleanup] Failing stuck order #${order.id} (created ${order.createdAt})`);
+      
+      await retryDbOp(
+        () => updateOrder(order.id, { status: "failed", completedAt: new Date() }),
+        `Fail stuck order ${order.id}`
+      ).catch(e => console.error(`[Stuck Cleanup] Failed to update order ${order.id}:`, e));
+      
+      // Update stuck order items
+      try {
+        const items = await getOrderItems(order.id);
+        for (const item of items) {
+          if (item.status === 'pending' || item.status === 'processing') {
+            await updateOrderItem(item.id, {
+              status: 'failed',
+              errorMessage: 'Order timed out (stuck in processing > 5 min)',
+              completedAt: new Date(),
+            }).catch(console.error);
+          }
+        }
+      } catch (e) {
+        console.error(`[Stuck Cleanup] Failed to update items for order ${order.id}:`, e);
+      }
+      
+      // Auto-refund
+      const skuCount = order.totalSkus || 1;
+      await autoRefundOrder(order.id, skuCount);
+    }
+  } catch (err) {
+    console.error('[Stuck Cleanup] Error:', err);
+  }
+}
+
+// Start the stuck order cleanup interval (every 2 minutes)
+setInterval(cleanupStuckOrders, 2 * 60 * 1000);
+// Also run once on startup after a short delay
+setTimeout(cleanupStuckOrders, 10000);
 
 // Auto-refund a failed order by crediting the user's balance
 async function autoRefundOrder(orderId: number, skuCount: number) {

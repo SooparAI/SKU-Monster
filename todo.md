@@ -312,3 +312,20 @@
 - [x] Result: AI generation now completes in ~20s (was ~90s sequential), total scrape ~25s
 - [x] Verified: Order 270019 completed with 3 images at 4096x4096, 2.7-3.1MB each
 - [x] All 27 tests passing
+
+## Bug: Order #270020 stuck "Processing" for 2+ hours (Feb 6, 2026) - FIXED!
+- [x] Investigated: Forge API fetch() had NO timeout, could hang forever
+- [x] Root cause: withTimeout() only rejected the promise but didn't abort the underlying fetch
+- [x] Fix: Added AbortSignal.timeout(90s) to Forge API image generation fetch
+- [x] Fix: Added AbortSignal.timeout(15s) to UPC lookup and zip download fetches
+- [x] Fix: Reduced SKU timeout from 6min to 4min (AI gen has its own 90s timeout)
+- [x] Fix: Added totalImages===0 check to always mark orders as "failed" when no images produced
+- [x] Fix: Added retryDbOp() wrapper for all DB updates in processScrapeJob (3 retries with backoff)
+- [x] Fix: Added 5-minute stuck-job cleanup interval (auto-detects and fails stuck orders)
+- [x] Fix: Added auto-refund for stuck orders during cleanup
+- [x] Refunded order #270020 ($10 auto-refunded, confirmed in DB)
+- [x] Fixed order #270020 status from "processing" to "failed" in DB
+- [x] Added admin.backfillRefunds endpoint for manual refund backfill
+- [x] Added admin.cleanupStuck endpoint for manual stuck order cleanup
+- [x] Added retry button on Orders page and OrderDetail page for failed orders
+- [x] All 41 tests passing (14 new tests for timeout/retry/status logic)

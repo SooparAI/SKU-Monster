@@ -1,0 +1,25 @@
+{
+  "query": "SELECT o.id, o.status, o.totalCost, o.chargedAmount, o.zipFileUrl, o.totalSkus, o.processedSkus, o.createdAt, o.completedAt, oi.sku, oi.status as itemStatus, oi.errorMessage, oi.imagesFound FROM orders o LEFT JOIN orderItems oi ON o.id = oi.orderId WHERE o.id = 270020;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT o.id, o.status, o.totalCost, o.chargedAmount, o.zipFileUrl, o.totalSkus, o.processedSkus, o.createdAt, o.completedAt, oi.sku, oi.status as itemStatus, oi.errorMessage, oi.imagesFound FROM orders o LEFT JOIN orderItems oi ON o.id = oi.orderId WHERE o.id = 270020;",
+  "rows": [
+    {
+      "id": "270020",
+      "status": "processing",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_VYeUR3H8.zip",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "createdAt": "2026-02-07 01:10:42",
+      "completedAt": "2026-02-07 01:13:59",
+      "sku": "3770006409028",
+      "itemStatus": "pending",
+      "errorMessage": "NULL",
+      "imagesFound": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalCost\tchargedAmount\tzipFileUrl\ttotalSkus\tprocessedSkus\tcreatedAt\tcompletedAt\tsku\titemStatus\terrorMessage\timagesFound\n270020\tprocessing\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_VYeUR3H8.zip\t1\t0\t2026-02-07 01:10:42\t2026-02-07 01:13:59\t3770006409028\tpending\tNULL\t0\n",
+  "stderr": "",
+  "execution_time_ms": 53
+}

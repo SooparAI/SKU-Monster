@@ -1,0 +1,21 @@
+{
+  "query": "SELECT id, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, createdAt, completedAt FROM orders WHERE id = 270020;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, createdAt, completedAt FROM orders WHERE id = 270020;",
+  "rows": [
+    {
+      "id": "270020",
+      "status": "processing",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_VYeUR3H8.zip",
+      "createdAt": "2026-02-07 01:10:42",
+      "completedAt": "2026-02-07 01:13:59"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tchargedAmount\tzipFileUrl\tcreatedAt\tcompletedAt\n270020\tprocessing\t1\t0\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_VYeUR3H8.zip\t2026-02-07 01:10:42\t2026-02-07 01:13:59\n",
+  "stderr": "",
+  "execution_time_ms": 50
+}

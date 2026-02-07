@@ -1,9 +1,10 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
 import {
   Package,
   Download,
@@ -14,6 +15,7 @@ import {
   Loader2,
   ArrowRight,
   History,
+  RefreshCw,
 } from "lucide-react";
 
 const statusConfig = {
@@ -27,10 +29,21 @@ const statusConfig = {
 export default function Orders() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
 
   const { data: orders, isLoading } = trpc.orders.list.useQuery(undefined, {
     enabled: !!user,
-    refetchInterval: 5000, // Refresh every 5 seconds to check for updates
+    refetchInterval: 5000,
+  });
+
+  const retryMutation = trpc.orders.retry.useMutation({
+    onSuccess: (result) => {
+      toast.success(result.message);
+      utils.orders.list.invalidate();
+    },
+    onError: (err) => {
+      toast.error(err.message);
+    },
   });
 
   if (isLoading) {
@@ -43,25 +56,24 @@ export default function Orders() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex flex-col gap-2">
         <h1 className="text-3xl font-bold tracking-tight">Order History</h1>
         <p className="text-muted-foreground">View and download your scraping results</p>
       </div>
 
-      {/* Orders List */}
       {orders && orders.length > 0 ? (
         <div className="space-y-4">
           {orders.map((order) => {
             const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
             const StatusIcon = status.icon;
             const isProcessing = order.status === "processing";
+            const isFailed = order.status === "failed";
 
             return (
               <Card
                 key={order.id}
                 className={`cursor-pointer hover:border-primary/50 transition-colors ${
-                  isProcessing ? "border-blue-500/50" : ""
+                  isProcessing ? "border-blue-500/50" : isFailed ? "border-red-500/30" : ""
                 }`}
                 onClick={() => setLocation(`/orders/${order.id}`)}
               >
@@ -89,13 +101,30 @@ export default function Orders() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
                       <div className="text-right">
                         <p className="text-sm text-muted-foreground">Cost</p>
                         <p className="font-semibold">${parseFloat(order.chargedAmount).toFixed(2)}</p>
                       </div>
 
-                      {order.zipFileUrl && (
+                      {/* Retry button for failed orders */}
+                      {isFailed && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            retryMutation.mutate({ orderId: order.id });
+                          }}
+                          disabled={retryMutation.isPending}
+                        >
+                          <RefreshCw className={`h-4 w-4 mr-2 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+                          Retry
+                        </Button>
+                      )}
+
+                      {order.zipFileUrl && order.status === "completed" && (
                         <Button
                           variant="outline"
                           size="sm"

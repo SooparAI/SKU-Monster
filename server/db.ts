@@ -333,5 +333,50 @@ export async function upsertStore(data: InsertStore): Promise<void> {
     });
 }
 
+// Get orders stuck in 'processing' for longer than maxAgeMs
+export async function getStuckProcessingOrders(maxAgeMs: number = 5 * 60 * 1000): Promise<Order[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoff = new Date(Date.now() - maxAgeMs);
+  return db
+    .select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.status, "processing"),
+        sql`${orders.createdAt} < ${cutoff}`
+      )
+    );
+}
+
+// Get all failed orders for a user that don't have corresponding refund transactions
+export async function getFailedOrdersWithoutRefund(userId?: number): Promise<Order[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  // Get all refund transaction descriptions to extract order IDs
+  const refundTxns = await db
+    .select({ description: transactions.description })
+    .from(transactions)
+    .where(eq(transactions.type, "refund"));
+
+  const refundedOrderIds = new Set<number>();
+  for (const txn of refundTxns) {
+    const match = txn.description?.match(/#(\d+)/);
+    if (match) refundedOrderIds.add(parseInt(match[1]));
+  }
+
+  const conditions = [eq(orders.status, "failed")];
+  if (userId) conditions.push(eq(orders.userId, userId));
+
+  const failedOrders = await db
+    .select()
+    .from(orders)
+    .where(and(...conditions));
+
+  return failedOrders.filter(o => !refundedOrderIds.has(o.id));
+}
+
 // Pricing constant
 export const SKU_PRICE = 10; // $10 per SKU (~3 HQ images)
