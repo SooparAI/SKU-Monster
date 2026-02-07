@@ -408,3 +408,16 @@
 - [x] Manually fixed Order 300008 DB: status=partial, 12/14 items completed, ZIP URL restored, balance corrected from $1400 to $860
 - [x] Increased stuck-job cleanup threshold from 8min to 30min to match dynamic timeout
 - [x] All 41 tests passing
+
+## Add barcodelookup.com as fallback UPC source (Feb 7, 2026)
+- [ ] Research barcodelookup.com API/scraping options
+- [ ] Add barcodelookup.com as fallback when upcitemdb.com returns no results
+- [ ] Fix AI fallback: don't trigger when product name is "No product found" or similar garbage
+- [ ] Investigate wrong image for SKU 3274872474666 (Fendi Perché No — AI generated wrong product)
+
+## EAN-Search.org Integration (Last-Resort Fallback) (Feb 7, 2026)
+- [x] Add EAN_SEARCH_API_KEY secret
+- [x] Implement ean-search.org API lookup in upcLookup.ts (last-resort only, 100 queries/month limit)
+- [x] Integrate into scraperService: only call when ALL other methods return 0 images AND no product name
+- [x] Fix AI fallback: don't trigger with garbage names like "No product found"
+- [ ] Test with SKU 3003720011131 (requires publish + live order)

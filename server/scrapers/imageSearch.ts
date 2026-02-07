@@ -107,18 +107,27 @@ async function perplexityProductSearch(sku: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: `You are a product identification assistant. Given a barcode/UPC/EAN number, identify the product. Return ONLY valid JSON with these fields:
+            content: `You are a product identification assistant specializing in fragrances and cosmetics. Given a barcode/UPC/EAN number, search barcodelookup.com, fragrantica.com, parfumo.com, and major retailers to identify the product.
+
+IMPORTANT: Many EAN-13 barcodes starting with 3 are European fragrances. Search specifically on:
+- barcodelookup.com/{barcode}
+- fragrantica.com
+- parfumo.com
+- sephora.com, nordstrom.com, bloomingdales.com, fragrancenet.com, fragrancex.com
+
+Return ONLY valid JSON with these fields:
 {
-  "productName": "full product name",
+  "productName": "full product name including size",
   "brand": "brand name",
   "description": "brief visual description of the product packaging/bottle/box for image generation",
-  "retailerUrls": ["up to 5 retailer product page URLs where this product can be found"]
+  "retailerUrls": ["up to 5 retailer product page URLs where this product can be found with images"]
 }
+If you cannot identify the product, set productName to empty string "". Do NOT guess or make up product names.
 Return ONLY the JSON object, no markdown, no explanation.`
           },
           {
             role: 'user',
-            content: `Identify the product with barcode/UPC: ${sku}`
+            content: `Identify the fragrance/cosmetic product with EAN/UPC barcode: ${sku}. Search barcodelookup.com/${sku} and fragrance databases.`
           }
         ],
       }),
@@ -218,11 +227,11 @@ async function llmProductIdentify(sku: string): Promise<{
         messages: [
           {
             role: 'system',
-            content: 'You identify products from barcodes. Return ONLY JSON: {"productName":"...","brand":"...","description":"visual description of product packaging"}'
+            content: 'You identify fragrance and cosmetic products from EAN/UPC barcodes. Many EAN-13 codes starting with 3 are European fragrances. Return ONLY JSON: {"productName":"...","brand":"...","description":"visual description of product packaging/bottle"}. If you cannot identify the product, set productName to empty string.'
           },
           {
             role: 'user',
-            content: `What product has barcode ${sku}? Return JSON only.`
+            content: `What fragrance/cosmetic product has EAN/UPC barcode ${sku}? Return JSON only.`
           }
         ],
       }),

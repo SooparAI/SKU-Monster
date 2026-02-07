@@ -503,7 +503,14 @@ export async function processImagesHQ(
   
   if (scrapedImageUrls.length === 0) {
     // No scraped URLs at all — go straight to AI generation if we have product info
-    if (productName && productName !== 'unknown' && productName !== 'Unknown product' && productName !== 'Unknown Product') {
+    // Reject garbage product names that would produce nonsensical AI images
+    const badNames = new Set(['unknown', 'unknown product', 'no product found', 'not found', 'n/a', 'na', '', 'unable to identify', 'product not found']);
+    const nameLower = (productName || '').toLowerCase().trim();
+    const isValidProductName = productName && !badNames.has(nameLower) &&
+      !nameLower.startsWith('unknown product') && !nameLower.startsWith('no product') &&
+      !nameLower.startsWith('unable to') && !nameLower.startsWith('not found') &&
+      !nameLower.includes('no matching information') && productName.length > 3;
+    if (isValidProductName) {
       console.log(`[HQ Pipeline] No scraped images for ${sku}, attempting full AI generation for: ${productName}`);
       result.processingSteps.push('No scraped images — attempting AI generation from product name...');
       

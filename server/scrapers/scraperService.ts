@@ -12,7 +12,7 @@ import { promisify } from "util";
 import { storagePut } from "../storage";
 import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
-import { lookupUpc, extractProductKeywords } from "./upcLookup";
+import { lookupUpc, lookupBarcodeLookup, lookupEanSearch, extractProductKeywords } from "./upcLookup";
 import { searchProductImages, searchEbayImages, searchRetailerImages, searchAllImageSources } from "./imageSearch";
 import { createStepLogger, addScrapeLog } from "../db";
 
@@ -332,8 +332,21 @@ export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrap
       }
       await log?.log('upc_lookup', 'success', `Found: ${productName} by ${brand} (${upcResult.images.length} images)`, { productName, brand, imageCount: upcResult.images.length, imageUrls: upcResult.images.slice(0, 5) }, Date.now() - upcStart);
     } else {
-      console.log(`[${sku}] UPC: not found`);
-      await log?.log('upc_lookup', 'success', 'Product not found in UPC database', null, Date.now() - upcStart);
+      console.log(`[${sku}] UPC: not found on upcitemdb, trying barcodelookup.com...`);
+      // Fallback: try barcodelookup.com
+      const bclResult = await lookupBarcodeLookup(sku);
+      if (bclResult.found) {
+        productName = bclResult.productName || null;
+        brand = bclResult.brand || null;
+        console.log(`[${sku}] BarcodeLookup found: ${productName} by ${brand} (${bclResult.images.length} images)`);
+        for (const imageUrl of bclResult.images) {
+          allImages.push({ sku, storeName: "BarcodeLookup", sourceUrl: "barcodelookup.com", imageUrl });
+        }
+        await log?.log('upc_lookup', 'success', `BarcodeLookup found: ${productName} by ${brand} (${bclResult.images.length} images)`, { source: 'barcodelookup.com', productName, brand, imageCount: bclResult.images.length }, Date.now() - upcStart);
+      } else {
+        console.log(`[${sku}] UPC: not found on either database`);
+        await log?.log('upc_lookup', 'success', 'Product not found in UPC databases (upcitemdb + barcodelookup)', null, Date.now() - upcStart);
+      }
     }
   } catch (upcErr) {
     console.error(`[${sku}] UPC lookup error: ${upcErr}`);
@@ -426,6 +439,42 @@ export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrap
   } else {
     console.log(`[${sku}] ${allImages.length} images found, skipping browser scraping`);
     await log?.log('browser_scrape', 'success', `Skipped - already have ${allImages.length} images`);
+  }
+
+  // STEP 3.5: EAN-Search.org LAST RESORT (only when ALL other methods found 0 images AND no product name)
+  // This API has a strict 100 queries/month limit - only use when absolutely necessary
+  if (allImages.length === 0 && !productName) {
+    console.log(`[${sku}] STEP 3.5: EAN-Search.org LAST RESORT (0 images, no product name)...`);
+    const eanStart = Date.now();
+    try {
+      const eanResult = await lookupEanSearch(sku);
+      if (eanResult.found) {
+        productName = eanResult.productName || null;
+        brand = eanResult.brand || null;
+        console.log(`[${sku}] EAN-Search found: ${productName} (${eanResult.description})`);
+        await log?.log('ean_search', 'success', `EAN-Search found: ${productName}`, { productName, brand, description: eanResult.description }, Date.now() - eanStart);
+        
+        // Now that we have a product name, retry Perplexity image search with the correct name
+        console.log(`[${sku}] Retrying image search with product name: ${productName}...`);
+        try {
+          const retryResult = await searchAllImageSources(sku, productName);
+          for (const imageUrl of retryResult.imageUrls) {
+            allImages.push({ sku, storeName: "Retailer", sourceUrl: "ean-search-retry", imageUrl });
+          }
+          console.log(`[${sku}] Retry search found ${retryResult.imageUrls.length} images`);
+          await log?.log('ean_search_retry', 'success', `Retry with product name found ${retryResult.imageUrls.length} images`, { imageCount: retryResult.imageUrls.length }, Date.now() - eanStart);
+        } catch (retryErr) {
+          console.error(`[${sku}] Retry search error: ${retryErr}`);
+        }
+      } else {
+        console.log(`[${sku}] EAN-Search: not found either`);
+        await log?.log('ean_search', 'success', 'Product not found in EAN-Search.org', null, Date.now() - eanStart);
+      }
+    } catch (eanErr) {
+      console.error(`[${sku}] EAN-Search error: ${eanErr}`);
+      const msg = eanErr instanceof Error ? eanErr.message : String(eanErr);
+      await log?.log('ean_search', 'error', `EAN-Search failed: ${msg}`, { error: msg }, Date.now() - eanStart);
+    }
   }
 
   // Deduplicate
