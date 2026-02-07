@@ -1,0 +1,130 @@
+{
+  "query": "SELECT id, userId, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, createdAt, completedAt FROM orders ORDER BY id DESC LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, userId, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, createdAt, completedAt FROM orders ORDER BY id DESC LIMIT 10;",
+  "rows": [
+    {
+      "id": "300002",
+      "userId": "120160",
+      "status": "processing",
+      "totalSkus": "1",
+      "processedSkus": "0",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300002/Photo.1_Output_DdpBGaz8.zip",
+      "createdAt": "2026-02-07 16:57:35",
+      "completedAt": "2026-02-07 17:20:11"
+    },
+    {
+      "id": "300001",
+      "userId": "120160",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300001/Photo.1_Output_7YHlAfH5.zip",
+      "createdAt": "2026-02-07 15:53:00",
+      "completedAt": "2026-02-07 15:57:11"
+    },
+    {
+      "id": "270020",
+      "userId": "120160",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_ferUHIYX.zip",
+      "createdAt": "2026-02-07 01:10:42",
+      "completedAt": "2026-02-07 15:55:51"
+    },
+    {
+      "id": "270019",
+      "userId": "1",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270019/Photo.1_Output_wTe1kamX.zip",
+      "createdAt": "2026-02-07 00:30:58",
+      "completedAt": "2026-02-07 00:31:25"
+    },
+    {
+      "id": "270018",
+      "userId": "1",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270018/Photo.1_Output_h1lXcXzK.zip",
+      "createdAt": "2026-02-06 23:31:27",
+      "completedAt": "2026-02-06 23:32:20"
+    },
+    {
+      "id": "270017",
+      "userId": "1",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270017/Photo.1_Output_4WpGDA9A.zip",
+      "createdAt": "2026-02-06 22:35:40",
+      "completedAt": "2026-02-06 22:36:01"
+    },
+    {
+      "id": "270016",
+      "userId": "1",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270016/Photo.1_Output_QCb9rgFE.zip",
+      "createdAt": "2026-02-06 22:35:20",
+      "completedAt": "2026-02-06 22:35:59"
+    },
+    {
+      "id": "270015",
+      "userId": "120160",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270015/Photo.1_Output_M-4c6F4T.zip",
+      "createdAt": "2026-02-06 21:22:10",
+      "completedAt": "2026-02-06 23:04:21"
+    },
+    {
+      "id": "270014",
+      "userId": "120160",
+      "status": "failed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270014/Photo.1_Output_NC-sVTC_.zip",
+      "createdAt": "2026-02-06 21:19:57",
+      "completedAt": "2026-02-07 00:23:37"
+    },
+    {
+      "id": "270013",
+      "userId": "1",
+      "status": "completed",
+      "totalSkus": "1",
+      "processedSkus": "1",
+      "totalCost": "10.00",
+      "chargedAmount": "10.00",
+      "zipFileUrl": "https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270013/Photo.1_Output_Ec2Kfpzr.zip",
+      "createdAt": "2026-02-06 20:41:52",
+      "completedAt": "2026-02-06 20:42:24"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tchargedAmount\tzipFileUrl\tcreatedAt\tcompletedAt\n300002\t120160\tprocessing\t1\t0\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300002/Photo.1_Output_DdpBGaz8.zip\t2026-02-07 16:57:35\t2026-02-07 17:20:11\n300001\t120160\tfailed\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300001/Photo.1_Output_7YHlAfH5.zip\t2026-02-07 15:53:00\t2026-02-07 15:57:11\n270020\t120160\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270020/Photo.1_Output_ferUHIYX.zip\t2026-02-07 01:10:42\t2026-02-07 15:55:51\n270019\t1\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270019/Photo.1_Output_wTe1kamX.zip\t2026-02-07 00:30:58\t2026-02-07 00:31:25\n270018\t1\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270018/Photo.1_Output_h1lXcXzK.zip\t2026-02-06 23:31:27\t2026-02-06 23:32:20\n270017\t1\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270017/Photo.1_Output_4WpGDA9A.zip\t2026-02-06 22:35:40\t2026-02-06 22:36:01\n270016\t1\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270016/Photo.1_Output_QCb9rgFE.zip\t2026-02-06 22:35:20\t2026-02-06 22:35:59\n270015\t120160\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270015/Photo.1_Output_M-4c6F4T.zip\t2026-02-06 21:22:10\t2026-02-06 23:04:21\n270014\t120160\tfailed\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270014/Photo.1_Output_NC-sVTC_.zip\t2026-02-06 21:19:57\t2026-02-07 00:23:37\n270013\t1\tcompleted\t1\t1\t10.00\t10.00\thttps://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/270013/Photo.1_Output_Ec2Kfpzr.zip\t2026-02-06 20:41:52\t2026-02-06 20:42:24\n",
+  "stderr": "",
+  "execution_time_ms": 136
+}

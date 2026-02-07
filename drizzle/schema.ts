@@ -112,3 +112,22 @@ export const stores = mysqlTable("stores", {
 
 export type Store = typeof stores.$inferSelect;
 export type InsertStore = typeof stores.$inferInsert;
+
+/**
+ * Scrape logs for debugging production pipeline failures
+ * Each row = one pipeline step for one order/SKU
+ */
+export const scrapeLogs = mysqlTable("scrapeLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  orderId: int("orderId").notNull(),
+  sku: varchar("sku", { length: 64 }).notNull(),
+  step: varchar("step", { length: 64 }).notNull(), // e.g. 'upc_lookup', 'perplexity_search', 'retailer_fetch', 'ai_gen', 'upload', 'zip'
+  status: mysqlEnum("status", ["start", "success", "error"]).notNull(),
+  message: text("message"), // human-readable summary
+  details: json("details"), // full data (URLs found, timings, errors)
+  durationMs: int("durationMs"), // how long this step took
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ScrapeLog = typeof scrapeLogs.$inferSelect;
+export type InsertScrapeLog = typeof scrapeLogs.$inferInsert;

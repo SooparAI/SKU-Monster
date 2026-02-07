@@ -354,3 +354,17 @@
 - [x] Fix: Product info (name, brand) from Perplexity feeds into AI image generation for better prompts
 - [x] All 41 tests passing, TypeScript clean
 - [ ] Test end-to-end on deployed server (requires publish)
+
+## Feature: Server-side diagnostic logging for production debugging (Feb 7, 2026)
+- [x] Added scrape_logs table to DB schema for persistent pipeline step logging
+- [x] Instrumented scrapeSku with DB logging for every step (UPC, Perplexity, retailer fetch, AI gen, upscale, upload)
+- [x] Added admin.getScrapeLogs endpoint to view scrape logs for any order
+- [ ] Add admin UI page to view logs (deferred)
+
+## Feature: Replace sharp upscaling with AI upscaler (Feb 7, 2026)
+- [x] Researched: Replicate Real-ESRGAN = $0.002/image, ~4s per upscale, true neural network upscaling
+- [x] Replaced sharp lanczos3 with Replicate Real-ESRGAN in hqImagePipeline.ts
+- [x] Pipeline: Forge AI gen (1024x1024) → upload to S3 → Real-ESRGAN 4x → 4096x4096
+- [x] Fallback chain: Real-ESRGAN → sharp lanczos3 → 1024x1024 original
+- [x] Cost: ~$0.002/image (well under $0.05 budget)
+- [x] All 41 tests passing

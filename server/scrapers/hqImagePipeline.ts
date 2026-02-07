@@ -5,20 +5,22 @@
  * 1. Pre-filter URLs by pattern (FREE, instant)
  * 2. Score images in PARALLEL - works with or without sharp (FREE, ~2-3s total)
  * 3. Pick the BEST reference image
- * 4. Generate clean 4K product image via AI (Forge ImageService)
- * 5. Upscale AI output from 1024→4096 with sharp (or keep 1024 if sharp unavailable)
+ * 4. Generate clean product image via AI (Forge ImageService) at 1024x1024
+ * 5. AI upscale 1024→4096 via Replicate Real-ESRGAN (~$0.002/image, ~4s)
  * 6. Upload to S3
  * 
  * Key features:
  * - Uses AI to generate clean white-background product photos from scraped references
+ * - Real-ESRGAN neural network upscaling preserves text, logos, and fine details
  * - Output is retailer-ready (Amazon, Walmart, eBay compliant)
- * - Works without sharp (uploads at 1024x1024 instead of 4096x4096)
+ * - Falls back to sharp lanczos3 if Real-ESRGAN unavailable, then 1024x1024
  * - Falls back to original scraped images if AI generation fails
  * - Comprehensive error logging for debugging
  */
 
 import { storagePut } from '../storage';
 import { nanoid } from 'nanoid';
+import Replicate from 'replicate';
 
 // Dynamic sharp import - may not be available in all environments
 let sharpModule: any = null;
@@ -32,10 +34,65 @@ async function getSharp(): Promise<any> {
     sharpModule = mod.default || mod;
     console.log('[HQ Pipeline] sharp module loaded successfully');
   } catch (e) {
-    console.warn('[HQ Pipeline] sharp not available, AI images will be 1024x1024');
+    console.warn('[HQ Pipeline] sharp not available for metadata');
     sharpModule = null;
   }
   return sharpModule;
+}
+
+// Replicate Real-ESRGAN for AI upscaling
+const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
+const REAL_ESRGAN_MODEL = 'nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa';
+
+/**
+ * AI upscale using Replicate Real-ESRGAN (~$0.002/image, ~4s)
+ * Takes an S3 URL and returns a 4x upscaled buffer
+ */
+async function aiUpscale(imageUrl: string, scale: number = 4): Promise<Buffer | null> {
+  if (!REPLICATE_TOKEN) {
+    console.warn('[AI Upscale] REPLICATE_API_TOKEN not set, skipping AI upscale');
+    return null;
+  }
+  try {
+    const replicate = new Replicate({ auth: REPLICATE_TOKEN });
+    console.log(`[AI Upscale] Upscaling ${scale}x via Real-ESRGAN: ${imageUrl.substring(0, 60)}...`);
+    const start = Date.now();
+    
+    const output = await replicate.run(REAL_ESRGAN_MODEL, {
+      input: {
+        image: imageUrl,
+        scale,
+        face_enhance: false,
+      }
+    }) as any;
+
+    // Output is a ReadableStream — collect it into a buffer
+    let buffer: Buffer;
+    if (output instanceof ReadableStream || (output && typeof output.getReader === 'function')) {
+      const reader = (output as ReadableStream).getReader();
+      const chunks: Uint8Array[] = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+      buffer = Buffer.concat(chunks);
+    } else if (typeof output === 'string') {
+      // Sometimes returns a URL
+      const resp = await fetch(output, { signal: AbortSignal.timeout(30000) });
+      buffer = Buffer.from(await resp.arrayBuffer());
+    } else {
+      console.error('[AI Upscale] Unexpected output type:', typeof output);
+      return null;
+    }
+
+    const elapsed = Date.now() - start;
+    console.log(`[AI Upscale] Done in ${elapsed}ms, output: ${(buffer.length / 1024).toFixed(1)}KB`);
+    return buffer;
+  } catch (err) {
+    console.error(`[AI Upscale] Real-ESRGAN failed: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
 }
 
 // Forge API config (from environment)
@@ -284,27 +341,45 @@ async function generateProductImage(
     const aiBuffer = Buffer.from(result.image.b64Json, 'base64');
     console.log(`[AI Gen] Generated ${variant}: 1024x1024, ${(aiBuffer.length / 1024).toFixed(1)}KB`);
 
-    // Try to upscale to 4096x4096 with sharp
-    const sharp = await getSharp();
-    if (sharp) {
+    // Upload 1024x1024 to S3 first so Real-ESRGAN can access it
+    const tempKey = `scrapes/temp_upscale_${nanoid(8)}.png`;
+    const { url: tempS3Url } = await storagePut(tempKey, aiBuffer, 'image/png');
+    console.log(`[AI Gen] Temp upload for upscaling: ${tempS3Url.substring(0, 60)}...`);
+
+    // AI upscale with Real-ESRGAN (4x = 1024→4096)
+    const upscaledBuffer = await aiUpscale(tempS3Url, 4);
+    if (upscaledBuffer && upscaledBuffer.length > aiBuffer.length) {
+      // Verify dimensions with sharp if available
+      let w = 4096, h = 4096;
+      const sharp = await getSharp();
+      if (sharp) {
+        try {
+          const meta = await sharp(upscaledBuffer).metadata();
+          w = meta.width || 4096;
+          h = meta.height || 4096;
+        } catch { /* use defaults */ }
+      }
+      console.log(`[AI Gen] Real-ESRGAN upscaled to ${w}x${h}, ${(upscaledBuffer.length / 1024).toFixed(1)}KB`);
+      return { buffer: upscaledBuffer, width: w, height: h };
+    }
+
+    // Fallback: try sharp lanczos3 if Real-ESRGAN failed
+    const sharp2 = await getSharp();
+    if (sharp2) {
       try {
-        const upscaled = await sharp(aiBuffer)
-          .resize(4096, 4096, {
-            kernel: 'lanczos3',
-            fit: 'fill',
-          })
+        const upscaled = await sharp2(aiBuffer)
+          .resize(4096, 4096, { kernel: 'lanczos3', fit: 'fill' })
           .png({ quality: 100, compressionLevel: 6 })
           .toBuffer();
-        
-        console.log(`[AI Gen] Upscaled to 4096x4096, ${(upscaled.length / 1024).toFixed(1)}KB`);
+        console.log(`[AI Gen] Sharp fallback upscale to 4096x4096, ${(upscaled.length / 1024).toFixed(1)}KB`);
         return { buffer: upscaled, width: 4096, height: 4096 };
       } catch (e) {
-        console.warn(`[AI Gen] Sharp upscale failed, using 1024x1024: ${e}`);
-        return { buffer: aiBuffer, width: 1024, height: 1024 };
+        console.warn(`[AI Gen] Sharp upscale also failed: ${e}`);
       }
     }
 
-    // No sharp available - return 1024x1024
+    // Last resort: return 1024x1024
+    console.warn(`[AI Gen] No upscaling available, returning 1024x1024`);
     return { buffer: aiBuffer, width: 1024, height: 1024 };
   } catch (err) {
     console.error(`[AI Gen] Error generating ${variant} image: ${err}`);

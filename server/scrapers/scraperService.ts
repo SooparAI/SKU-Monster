@@ -14,6 +14,7 @@ import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs"
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
 import { lookupUpc, extractProductKeywords } from "./upcLookup";
 import { searchProductImages, searchEbayImages, searchRetailerImages, searchAllImageSources } from "./imageSearch";
+import { createStepLogger, addScrapeLog } from "../db";
 
 const execAsync = promisify(exec);
 
@@ -307,15 +308,19 @@ function getTopStores(): StoreConfig[] {
 }
 
 // ===== MAIN SCRAPE FUNCTION =====
-export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
+export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrapeResult> {
   const startTime = Date.now();
   const allImages: ScrapedImageResult[] = [];
   const errors: string[] = [];
   let productName: string | null = null;
   let brand: string | null = null;
 
+  // Create a DB logger if we have an orderId
+  const log = orderId ? createStepLogger(orderId, sku) : null;
+
   // STEP 1: UPC database lookup (fast, reliable, no browser needed)
   console.log(`[${sku}] STEP 1: UPC database lookup...`);
+  const upcStart = Date.now();
   try {
     const upcResult = await lookupUpc(sku);
     if (upcResult.found) {
@@ -325,16 +330,21 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
       for (const imageUrl of upcResult.images) {
         allImages.push({ sku, storeName: "UPC Database", sourceUrl: "upcitemdb.com", imageUrl });
       }
+      await log?.log('upc_lookup', 'success', `Found: ${productName} by ${brand} (${upcResult.images.length} images)`, { productName, brand, imageCount: upcResult.images.length, imageUrls: upcResult.images.slice(0, 5) }, Date.now() - upcStart);
     } else {
       console.log(`[${sku}] UPC: not found`);
+      await log?.log('upc_lookup', 'success', 'Product not found in UPC database', null, Date.now() - upcStart);
     }
   } catch (upcErr) {
     console.error(`[${sku}] UPC lookup error: ${upcErr}`);
-    errors.push(`UPC lookup failed: ${upcErr instanceof Error ? upcErr.message : String(upcErr)}`);
+    const msg = upcErr instanceof Error ? upcErr.message : String(upcErr);
+    errors.push(`UPC lookup failed: ${msg}`);
+    await log?.log('upc_lookup', 'error', `UPC lookup failed: ${msg}`, { error: msg }, Date.now() - upcStart);
   }
 
   // STEP 2: Perplexity API search + retailer page image extraction
   console.log(`[${sku}] STEP 2: Perplexity + retailer image search (UPC found ${allImages.length} images, product: ${productName || 'unknown'})...`);
+  const searchStart = Date.now();
   try {
     const searchResult = await searchAllImageSources(sku, productName);
     // Update product info if Perplexity found better data
@@ -348,14 +358,26 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
       allImages.push({ sku, storeName: "Retailer", sourceUrl: "perplexity", imageUrl });
     }
     console.log(`[${sku}] Image search found ${searchResult.imageUrls.length} images from retailers (product: ${searchResult.productName}, brand: ${searchResult.brand})`);
+    await log?.log('perplexity_search', 'success', `Found ${searchResult.imageUrls.length} images, product: ${searchResult.productName} by ${searchResult.brand}`, {
+      imageCount: searchResult.imageUrls.length,
+      productName: searchResult.productName,
+      brand: searchResult.brand,
+      description: searchResult.description,
+      sources: searchResult.sources,
+      sampleUrls: searchResult.imageUrls.slice(0, 5),
+    }, Date.now() - searchStart);
   } catch (searchErr) {
     console.error(`[${sku}] Image search error: ${searchErr}`);
-    errors.push(`Image search failed: ${searchErr instanceof Error ? searchErr.message : String(searchErr)}`);
+    const msg = searchErr instanceof Error ? searchErr.message : String(searchErr);
+    errors.push(`Image search failed: ${msg}`);
+    await log?.log('perplexity_search', 'error', `Image search failed: ${msg}`, { error: msg }, Date.now() - searchStart);
   }
 
   // STEP 3: Browser scraping (OPTIONAL - only if we still need more images AND browser is available)
   if (allImages.length < 1) {
     console.log(`[${sku}] STEP 3: Browser scraping (have ${allImages.length} images so far)...`);
+    await log?.log('browser_scrape', 'start', `No images found, attempting browser scrape...`);
+    const browserStart = Date.now();
     const browser = await getBrowser();
     if (browser) {
       try {
@@ -392,15 +414,18 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
             break;
           }
         }
+        await log?.log('browser_scrape', 'success', `Browser found ${allImages.length} images`, null, Date.now() - browserStart);
       } finally {
         await closeBrowser();
       }
     } else {
       console.log(`[${sku}] Browser not available, skipping store scraping`);
       errors.push("Browser not available (Chrome not installed)");
+      await log?.log('browser_scrape', 'error', 'Browser not available (Chrome not installed)', null, Date.now() - browserStart);
     }
   } else {
     console.log(`[${sku}] ${allImages.length} images found, skipping browser scraping`);
+    await log?.log('browser_scrape', 'success', `Skipped - already have ${allImages.length} images`);
   }
 
   // Deduplicate
@@ -413,14 +438,44 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
 
   const elapsed = Math.floor((Date.now() - startTime) / 1000);
   console.log(`[${sku}] ${uniqueImages.length} unique images in ${elapsed}s`);
+  await log?.log('dedup', 'success', `${uniqueImages.length} unique images after dedup (${elapsed}s elapsed)`, { totalRaw: allImages.length, unique: uniqueImages.length });
 
   // STEP 4: HQ pipeline (parallel scoring + parallel upscaling)
+  const hqStart = Date.now();
   const imageUrls = uniqueImages.map(img => img.imageUrl);
-  const hqResult = await processImagesHQ(sku, imageUrls, productName, brand);
-  console.log(`[${sku}] HQ pipeline: ${hqResult.images.length} images, cost: $${hqResult.totalCost.toFixed(4)}`);
+  let hqResult;
+  try {
+    hqResult = await processImagesHQ(sku, imageUrls, productName, brand);
+    console.log(`[${sku}] HQ pipeline: ${hqResult.images.length} images, cost: $${hqResult.totalCost.toFixed(4)}`);
+    await log?.log('hq_pipeline', 'success', `${hqResult.images.length} HQ images, cost: $${hqResult.totalCost.toFixed(4)}`, {
+      imageCount: hqResult.images.length,
+      cost: hqResult.totalCost,
+      sources: hqResult.images.map(i => i.source),
+    }, Date.now() - hqStart);
+  } catch (hqErr) {
+    const msg = hqErr instanceof Error ? hqErr.message : String(hqErr);
+    console.error(`[${sku}] HQ pipeline error: ${msg}`);
+    errors.push(`HQ pipeline failed: ${msg}`);
+    await log?.log('hq_pipeline', 'error', `HQ pipeline failed: ${msg}`, { error: msg }, Date.now() - hqStart);
+    return { sku, images: [], errors, status: 'failed' };
+  }
 
   // STEP 5: Upload to S3 (parallel)
-  const uploadedHQ = await uploadHQImages(sku, hqResult.images);
+  const uploadStart = Date.now();
+  let uploadedHQ;
+  try {
+    uploadedHQ = await uploadHQImages(sku, hqResult.images);
+    await log?.log('s3_upload', 'success', `${uploadedHQ.length} images uploaded to S3`, {
+      count: uploadedHQ.length,
+      urls: uploadedHQ.map(u => u.s3Url),
+    }, Date.now() - uploadStart);
+  } catch (uploadErr) {
+    const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr);
+    console.error(`[${sku}] S3 upload error: ${msg}`);
+    errors.push(`S3 upload failed: ${msg}`);
+    await log?.log('s3_upload', 'error', `S3 upload failed: ${msg}`, { error: msg }, Date.now() - uploadStart);
+    return { sku, images: [], errors, status: 'failed' };
+  }
 
   // Build final images
   const finalImages: ScrapedImageResult[] = [];
@@ -443,7 +498,13 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     });
   }
 
-  console.log(`[${sku}] DONE: ${finalImages.length} HQ images uploaded to S3 in ${Math.floor((Date.now() - startTime) / 1000)}s`);
+  const totalElapsed = Math.floor((Date.now() - startTime) / 1000);
+  console.log(`[${sku}] DONE: ${finalImages.length} HQ images uploaded to S3 in ${totalElapsed}s`);
+  await log?.log('complete', finalImages.length > 0 ? 'success' : 'error',
+    `Completed: ${finalImages.length} HQ images in ${totalElapsed}s`,
+    { finalCount: finalImages.length, totalElapsed, errors },
+    Date.now() - startTime
+  );
 
   return {
     sku,
@@ -533,7 +594,7 @@ export async function runScrapeJob(
 
       try {
         const result = await withTimeout(
-          scrapeSku(sku),
+          scrapeSku(sku, orderId),
           SKU_TIMEOUT_MS,
           `Scrape SKU ${sku}`
         );

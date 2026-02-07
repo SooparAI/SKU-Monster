@@ -8,16 +8,19 @@ import {
   orderItems,
   scrapedImages,
   stores,
+  scrapeLogs,
   Transaction,
   Order,
   OrderItem,
   ScrapedImage,
   Store,
+  ScrapeLog,
   InsertTransaction,
   InsertOrder,
   InsertOrderItem,
   InsertScrapedImage,
   InsertStore,
+  InsertScrapeLog,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -376,6 +379,48 @@ export async function getFailedOrdersWithoutRefund(userId?: number): Promise<Ord
     .where(and(...conditions));
 
   return failedOrders.filter(o => !refundedOrderIds.has(o.id));
+}
+
+// Scrape log functions
+export async function addScrapeLog(data: InsertScrapeLog): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(scrapeLogs).values(data);
+  } catch (error) {
+    // Never let logging failures break the pipeline
+    console.error('[ScrapeLog] Failed to write log:', error);
+  }
+}
+
+export async function getScrapeLogsByOrder(orderId: number): Promise<ScrapeLog[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(scrapeLogs).where(eq(scrapeLogs.orderId, orderId)).orderBy(scrapeLogs.id);
+}
+
+// Helper to log a pipeline step with timing
+export function createStepLogger(orderId: number, sku: string) {
+  return {
+    async log(step: string, status: 'start' | 'success' | 'error', message: string, details?: any, durationMs?: number) {
+      await addScrapeLog({ orderId, sku, step, status, message, details: details ?? null, durationMs: durationMs ?? null });
+    },
+    async timed<T>(step: string, fn: () => Promise<T>): Promise<T> {
+      const start = Date.now();
+      await addScrapeLog({ orderId, sku, step, status: 'start', message: `Starting ${step}...` });
+      try {
+        const result = await fn();
+        const ms = Date.now() - start;
+        await addScrapeLog({ orderId, sku, step, status: 'success', message: `${step} completed in ${ms}ms`, durationMs: ms });
+        return result;
+      } catch (error) {
+        const ms = Date.now() - start;
+        const errMsg = error instanceof Error ? error.message : String(error);
+        await addScrapeLog({ orderId, sku, step, status: 'error', message: `${step} failed: ${errMsg}`, details: { error: errMsg }, durationMs: ms });
+        throw error;
+      }
+    }
+  };
 }
 
 // Pricing constant

@@ -21,6 +21,7 @@ import {
   saveScrapedImages,
   getStuckProcessingOrders,
   getFailedOrdersWithoutRefund,
+  getScrapeLogsByOrder,
   SKU_PRICE,
 } from "./db";
 import {
@@ -571,6 +572,16 @@ export const appRouter = router({
         message: `Cleaned up ${cleanedCount} stuck orders`,
       };
     }),
+
+    // Get scrape logs for a specific order (for debugging production failures)
+    getScrapeLogs: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin only' });
+        }
+        return getScrapeLogsByOrder(input.orderId);
+      }),
   }),
 });
 
