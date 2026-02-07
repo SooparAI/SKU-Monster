@@ -263,6 +263,7 @@ async function generateProductImage(
           mimeType: 'image/jpeg'
         }]
       }),
+      signal: AbortSignal.timeout(90000), // 90s hard timeout for AI image generation
     });
 
     if (!response.ok) {

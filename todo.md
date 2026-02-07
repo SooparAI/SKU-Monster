@@ -329,3 +329,14 @@
 - [x] Added admin.cleanupStuck endpoint for manual stuck order cleanup
 - [x] Added retry button on Orders page and OrderDetail page for failed orders
 - [x] All 41 tests passing (14 new tests for timeout/retry/status logic)
+
+## Bug: Scrape jobs timing out on deployed server (Feb 7, 2026)
+- [x] Investigated: Google/eBay/Amazon timing out from deployed server's IP (blocked/rate-limited)
+- [x] Root cause: Sequential search (UPC→Google→eBay→Amazon) + tight timeouts = total failure when sites block
+- [x] Fix: Added AbortSignal.timeout(90s) to Forge API image generation fetch (was missing!)
+- [x] Fix: Rewrote image search to run ALL sources in PARALLEL (Google+eBay+Amazon simultaneously)
+- [x] Fix: Added product name fallback search (uses UPC product name when barcode search fails)
+- [x] Fix: Increased search timeouts from 10-15s to 20s for deployed server
+- [x] Fix: Pipeline now works with just 1 UPC image (AI generates 3 variants from it)
+- [x] All 41 tests passing, TypeScript clean, dev server running
+- [ ] Test end-to-end on deployed server (requires publish)

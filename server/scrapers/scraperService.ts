@@ -13,7 +13,7 @@ import { storagePut } from "../storage";
 import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
 import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
 import { lookupUpc, extractProductKeywords } from "./upcLookup";
-import { searchProductImages, searchEbayImages, searchRetailerImages } from "./imageSearch";
+import { searchProductImages, searchEbayImages, searchRetailerImages, searchAllImageSources } from "./imageSearch";
 
 const execAsync = promisify(exec);
 
@@ -311,13 +311,17 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
   const startTime = Date.now();
   const allImages: ScrapedImageResult[] = [];
   const errors: string[] = [];
+  let productName: string | null = null;
+  let brand: string | null = null;
 
   // STEP 1: UPC database lookup (fast, reliable, no browser needed)
   console.log(`[${sku}] STEP 1: UPC database lookup...`);
   try {
     const upcResult = await lookupUpc(sku);
     if (upcResult.found) {
-      console.log(`[${sku}] UPC found: ${upcResult.productName} (${upcResult.images.length} images)`);
+      productName = upcResult.productName || null;
+      brand = upcResult.brand || null;
+      console.log(`[${sku}] UPC found: ${productName} by ${brand} (${upcResult.images.length} images)`);
       for (const imageUrl of upcResult.images) {
         allImages.push({ sku, storeName: "UPC Database", sourceUrl: "upcitemdb.com", imageUrl });
       }
@@ -329,55 +333,27 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
     errors.push(`UPC lookup failed: ${upcErr instanceof Error ? upcErr.message : String(upcErr)}`);
   }
 
-  // STEP 2: Google Images search (no API key, no rate limits, no browser needed)
-  if (allImages.length < 3) {
-    console.log(`[${sku}] STEP 2: Google Images search (have ${allImages.length} images so far)...`);
-    try {
-      const googleResult = await searchProductImages(sku);
-      if (googleResult.imageUrls.length > 0) {
-        console.log(`[${sku}] Google Images found ${googleResult.imageUrls.length} images`);
-        for (const imageUrl of googleResult.imageUrls) {
-          allImages.push({ sku, storeName: "Google Images", sourceUrl: "google.com", imageUrl });
-        }
-      } else {
-        console.log(`[${sku}] Google Images: no images found`);
-      }
-    } catch (googleErr) {
-      console.error(`[${sku}] Google Images error: ${googleErr}`);
-      errors.push(`Google Images failed: ${googleErr instanceof Error ? googleErr.message : String(googleErr)}`);
+  // STEP 2: Run ALL image searches in PARALLEL (Google + eBay + Amazon simultaneously)
+  // Pass product name from UPC for better search results
+  console.log(`[${sku}] STEP 2: Parallel image search (UPC found ${allImages.length} images, product: ${productName || 'unknown'})...`);
+  try {
+    const searchResult = await searchAllImageSources(sku, productName);
+    for (const imageUrl of searchResult.imageUrls) {
+      // Determine source from URL
+      let storeName = "Web Search";
+      if (imageUrl.includes('ebayimg.com')) storeName = "eBay";
+      else if (imageUrl.includes('media-amazon.com')) storeName = "Amazon";
+      else storeName = "Google Images";
+      allImages.push({ sku, storeName, sourceUrl: storeName.toLowerCase() + ".com", imageUrl });
     }
-  }
-
-  // STEP 2b: eBay image search (no API key, no rate limits, no browser needed)
-  if (allImages.length < 3) {
-    console.log(`[${sku}] STEP 2b: eBay search (have ${allImages.length} images so far)...`);
-    try {
-      const ebayImages = await searchEbayImages(sku);
-      for (const imageUrl of ebayImages) {
-        allImages.push({ sku, storeName: "eBay", sourceUrl: "ebay.com", imageUrl });
-      }
-      console.log(`[${sku}] eBay found ${ebayImages.length} images`);
-    } catch (ebayErr) {
-      console.error(`[${sku}] eBay error: ${ebayErr}`);
-    }
-  }
-
-  // STEP 2c: Amazon/retailer direct search (no browser needed)
-  if (allImages.length < 3) {
-    console.log(`[${sku}] STEP 2c: Amazon/retailer search (have ${allImages.length} images so far)...`);
-    try {
-      const retailerImages = await searchRetailerImages(sku);
-      for (const imageUrl of retailerImages) {
-        allImages.push({ sku, storeName: "Amazon", sourceUrl: "amazon.com", imageUrl });
-      }
-      console.log(`[${sku}] Amazon/retailer found ${retailerImages.length} images`);
-    } catch (retailErr) {
-      console.error(`[${sku}] Amazon/retailer error: ${retailErr}`);
-    }
+    console.log(`[${sku}] Image search found ${searchResult.imageUrls.length} images (Google: ${searchResult.sources.google || 0}, eBay: ${searchResult.sources.ebay || 0}, Amazon: ${searchResult.sources.amazon || 0})`);
+  } catch (searchErr) {
+    console.error(`[${sku}] Image search error: ${searchErr}`);
+    errors.push(`Image search failed: ${searchErr instanceof Error ? searchErr.message : String(searchErr)}`);
   }
 
   // STEP 3: Browser scraping (OPTIONAL - only if we still need more images AND browser is available)
-  if (allImages.length < 3) {
+  if (allImages.length < 1) {
     console.log(`[${sku}] STEP 3: Browser scraping (have ${allImages.length} images so far)...`);
     const browser = await getBrowser();
     if (browser) {
@@ -439,7 +415,7 @@ export async function scrapeSku(sku: string): Promise<SkuScrapeResult> {
 
   // STEP 4: HQ pipeline (parallel scoring + parallel upscaling)
   const imageUrls = uniqueImages.map(img => img.imageUrl);
-  const hqResult = await processImagesHQ(sku, imageUrls);
+  const hqResult = await processImagesHQ(sku, imageUrls, productName, brand);
   console.log(`[${sku}] HQ pipeline: ${hqResult.images.length} images, cost: $${hqResult.totalCost.toFixed(4)}`);
 
   // STEP 5: Upload to S3 (parallel)
