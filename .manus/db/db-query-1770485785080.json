@@ -1,0 +1,80 @@
+{
+  "query": "SELECT id, status, totalSkus, createdAt, completedAt FROM orders ORDER BY id DESC LIMIT 10",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, status, totalSkus, createdAt, completedAt FROM orders ORDER BY id DESC LIMIT 10",
+  "rows": [
+    {
+      "id": "300003",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-07 17:21:27",
+      "completedAt": "2026-02-07 17:21:56"
+    },
+    {
+      "id": "300002",
+      "status": "failed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-07 16:57:35",
+      "completedAt": "2026-02-07 17:24:49"
+    },
+    {
+      "id": "300001",
+      "status": "failed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-07 15:53:00",
+      "completedAt": "2026-02-07 15:57:11"
+    },
+    {
+      "id": "270020",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-07 01:10:42",
+      "completedAt": "2026-02-07 15:55:51"
+    },
+    {
+      "id": "270019",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-07 00:30:58",
+      "completedAt": "2026-02-07 00:31:25"
+    },
+    {
+      "id": "270018",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-06 23:31:27",
+      "completedAt": "2026-02-06 23:32:20"
+    },
+    {
+      "id": "270017",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-06 22:35:40",
+      "completedAt": "2026-02-06 22:36:01"
+    },
+    {
+      "id": "270016",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-06 22:35:20",
+      "completedAt": "2026-02-06 22:35:59"
+    },
+    {
+      "id": "270015",
+      "status": "completed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-06 21:22:10",
+      "completedAt": "2026-02-06 23:04:21"
+    },
+    {
+      "id": "270014",
+      "status": "failed",
+      "totalSkus": "1",
+      "createdAt": "2026-02-06 21:19:57",
+      "completedAt": "2026-02-07 00:23:37"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalSkus\tcreatedAt\tcompletedAt\n300003\tcompleted\t1\t2026-02-07 17:21:27\t2026-02-07 17:21:56\n300002\tfailed\t1\t2026-02-07 16:57:35\t2026-02-07 17:24:49\n300001\tfailed\t1\t2026-02-07 15:53:00\t2026-02-07 15:57:11\n270020\tcompleted\t1\t2026-02-07 01:10:42\t2026-02-07 15:55:51\n270019\tcompleted\t1\t2026-02-07 00:30:58\t2026-02-07 00:31:25\n270018\tcompleted\t1\t2026-02-06 23:31:27\t2026-02-06 23:32:20\n270017\tcompleted\t1\t2026-02-06 22:35:40\t2026-02-06 22:36:01\n270016\tcompleted\t1\t2026-02-06 22:35:20\t2026-02-06 22:35:59\n270015\tcompleted\t1\t2026-02-06 21:22:10\t2026-02-06 23:04:21\n270014\tfailed\t1\t2026-02-06 21:19:57\t2026-02-07 00:23:37\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}

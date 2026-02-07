@@ -1,0 +1,16 @@
+{
+  "query": "SHOW TABLES LIKE 'scrape%'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SHOW TABLES LIKE 'scrape%'",
+  "rows": [
+    {
+      "Tables_in_a56pqoKyYpysvDLAMeyVPv (scrape%)": "scrapeLogs"
+    },
+    {
+      "Tables_in_a56pqoKyYpysvDLAMeyVPv (scrape%)": "scrapedImages"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_a56pqoKyYpysvDLAMeyVPv (scrape%)\nscrapeLogs\nscrapedImages\n",
+  "stderr": "",
+  "execution_time_ms": 47
+}

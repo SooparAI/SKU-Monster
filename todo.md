@@ -368,3 +368,13 @@
 - [x] Fallback chain: Real-ESRGAN → sharp lanczos3 → 1024x1024 original
 - [x] Cost: ~$0.002/image (well under $0.05 budget)
 - [x] All 41 tests passing
+
+## Fix: Timeout and diagnostic logging improvements (Feb 7, 2026)
+- [x] Increased SKU timeout from 4min to 6min (Replicate cold starts can take 30-60s)
+- [x] Increased job hard timeout from 5min to 8min (6min SKU + 2min buffer)
+- [x] Increased stuck-job cleanup threshold from 5min to 8min to match
+- [x] Added 120s timeout to Replicate Real-ESRGAN API call
+- [x] Added granular timing to HQ pipeline (scoring, AI gen, upscale steps)
+- [x] Added processingSteps detail to scrape_logs for full pipeline trace
+- [x] Pushed scrape_logs table migration to production DB
+- [x] All 41 tests passing

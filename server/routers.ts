@@ -601,7 +601,7 @@ async function retryDbOp<T>(op: () => Promise<T>, label: string, retries = 3): P
 
 // Background job processor with robust error handling
 async function processScrapeJob(orderId: number, skus: string[]) {
-  const JOB_HARD_TIMEOUT = 5 * 60 * 1000; // 5 minutes absolute max
+  const JOB_HARD_TIMEOUT = 8 * 60 * 1000; // 8 minutes absolute max (6 min SKU timeout + 2 min buffer for zip/upload)
   let jobTimedOut = false;
   
   // Hard timeout that forces the job to fail if it runs too long
@@ -738,7 +738,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
 // Runs every 2 minutes to detect and auto-fail orders stuck in 'processing'
 async function cleanupStuckOrders() {
   try {
-    const stuckOrders = await getStuckProcessingOrders(5 * 60 * 1000); // 5 min threshold
+    const stuckOrders = await getStuckProcessingOrders(8 * 60 * 1000); // 8 min threshold (matches job hard timeout)
     if (stuckOrders.length === 0) return;
     
     console.log(`[Stuck Cleanup] Found ${stuckOrders.length} stuck orders`);
@@ -757,7 +757,7 @@ async function cleanupStuckOrders() {
           if (item.status === 'pending' || item.status === 'processing') {
             await updateOrderItem(item.id, {
               status: 'failed',
-              errorMessage: 'Order timed out (stuck in processing > 5 min)',
+              errorMessage: 'Order timed out (stuck in processing > 8 min)',
               completedAt: new Date(),
             }).catch(console.error);
           }

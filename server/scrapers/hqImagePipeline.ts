@@ -58,13 +58,22 @@ async function aiUpscale(imageUrl: string, scale: number = 4): Promise<Buffer | 
     console.log(`[AI Upscale] Upscaling ${scale}x via Real-ESRGAN: ${imageUrl.substring(0, 60)}...`);
     const start = Date.now();
     
-    const output = await replicate.run(REAL_ESRGAN_MODEL, {
-      input: {
-        image: imageUrl,
-        scale,
-        face_enhance: false,
-      }
-    }) as any;
+    // Use AbortController for timeout (Replicate cold starts can take 30-60s)
+    const controller = new AbortController();
+    const replicateTimeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
+    
+    let output: any;
+    try {
+      output = await replicate.run(REAL_ESRGAN_MODEL, {
+        input: {
+          image: imageUrl,
+          scale,
+          face_enhance: false,
+        }
+      });
+    } finally {
+      clearTimeout(replicateTimeout);
+    }
 
     // Output is a ReadableStream — collect it into a buffer
     let buffer: Buffer;
@@ -424,6 +433,7 @@ export async function processImagesHQ(
   }
   
   // Step 2: Score images IN PARALLEL (first 10)
+  const scoreStart = Date.now();
   result.processingSteps.push('Scoring images...');
   const imagesToScore = urlsToScore.slice(0, 10);
   
@@ -433,6 +443,8 @@ export async function processImagesHQ(
       return { url, ...scoreResult };
     })
   );
+  const scoreElapsed = ((Date.now() - scoreStart) / 1000).toFixed(1);
+  result.processingSteps.push(`Scored ${imagesToScore.length} images in ${scoreElapsed}s`);
   
   // Filter and sort by score
   let scoredImages = scoreResults
@@ -477,13 +489,15 @@ export async function processImagesHQ(
   
   // Step 4: Generate AI product images (3 variants) IN PARALLEL
   const variants: Array<'main' | 'angle' | 'detail'> = ['main', 'angle', 'detail'];
-  result.processingSteps.push('Generating AI product images in parallel...');
+  result.processingSteps.push('Generating 3 AI product images in parallel (each: Forge gen ~15s + S3 upload + Real-ESRGAN upscale ~4-60s)...');
   
   const aiStartTime = Date.now();
   const aiResults = await Promise.allSettled(
     variants.map(variant => generateProductImage(referenceUrl, productName || null, brand || null, variant))
   );
-  console.log(`[HQ Pipeline] AI generation completed in ${((Date.now() - aiStartTime) / 1000).toFixed(1)}s`);
+  const aiElapsed = ((Date.now() - aiStartTime) / 1000).toFixed(1);
+  console.log(`[HQ Pipeline] AI generation + upscaling completed in ${aiElapsed}s`);
+  result.processingSteps.push(`AI gen + upscale completed in ${aiElapsed}s`);
   
   let aiSuccessCount = 0;
   

@@ -66,7 +66,7 @@ export interface ScrapeJobResult {
 }
 
 // ===== OPTIMIZED CONSTANTS =====
-const SKU_TIMEOUT_MS = 4 * 60 * 1000; // 4 minutes max per SKU (AI gen has its own 90s timeout)
+const SKU_TIMEOUT_MS = 6 * 60 * 1000; // 6 minutes max per SKU (Replicate cold start can take 30-60s)
 const PAGE_TIMEOUT_MS = 10000;
 const PARALLEL_LIMIT = 5;
 const MAX_STORE_IMAGES = 10;
@@ -451,6 +451,7 @@ export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrap
       imageCount: hqResult.images.length,
       cost: hqResult.totalCost,
       sources: hqResult.images.map(i => i.source),
+      steps: hqResult.processingSteps,
     }, Date.now() - hqStart);
   } catch (hqErr) {
     const msg = hqErr instanceof Error ? hqErr.message : String(hqErr);
