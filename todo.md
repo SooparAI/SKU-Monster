@@ -403,3 +403,8 @@
 - [x] Fix timeout handler: don't discard results if job actually completed after timeout fired
 - [x] Fix AI fallback: trigger for SKUs where Perplexity returns "Unknown product" and 0 images found
 - [x] Fix Real-ESRGAN GPU memory limit: skip upscale for images >1449px (>2M pixels) instead of retrying 3x and failing
+- [x] Fix duplicate refund bug: stuck cleanup + hard timeout both triggered autoRefundOrder (Order 300008 refunded 4x = $560 instead of $140)
+- [x] Added in-memory refundedOrders Set to prevent duplicate refunds per order
+- [x] Manually fixed Order 300008 DB: status=partial, 12/14 items completed, ZIP URL restored, balance corrected from $1400 to $860
+- [x] Increased stuck-job cleanup threshold from 8min to 30min to match dynamic timeout
+- [x] All 41 tests passing

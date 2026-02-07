@@ -1,0 +1,108 @@
+{
+  "query": "SELECT oi.id, oi.sku, oi.status, oi.imagesFound, COUNT(si.id) as actualImages FROM orderItems oi LEFT JOIN scrapedImages si ON si.orderItemId = oi.id WHERE oi.orderId = 300008 GROUP BY oi.id ORDER BY oi.id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT oi.id, oi.sku, oi.status, oi.imagesFound, COUNT(si.id) as actualImages FROM orderItems oi LEFT JOIN scrapedImages si ON si.orderItemId = oi.id WHERE oi.orderId = 300008 GROUP BY oi.id ORDER BY oi.id;",
+  "rows": [
+    {
+      "id": "300018",
+      "sku": "8411061926062",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300019",
+      "sku": "8411061056691",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300020",
+      "sku": "8033488153557",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300021",
+      "sku": "8033488154158",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300022",
+      "sku": "652638010168",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300023",
+      "sku": "3274872474666",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300024",
+      "sku": "3701123004957",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300025",
+      "sku": "8052204136254",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300026",
+      "sku": "3003720011131",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300027",
+      "sku": "3770014573179",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300028",
+      "sku": "3770014573209",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300029",
+      "sku": "3701415901346",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300030",
+      "sku": "3701415900066",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    },
+    {
+      "id": "300031",
+      "sku": "3701415900134",
+      "status": "failed",
+      "imagesFound": "0",
+      "actualImages": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tsku\tstatus\timagesFound\tactualImages\n300018\t8411061926062\tfailed\t0\t0\n300019\t8411061056691\tfailed\t0\t0\n300020\t8033488153557\tfailed\t0\t0\n300021\t8033488154158\tfailed\t0\t0\n300022\t652638010168\tfailed\t0\t0\n300023\t3274872474666\tfailed\t0\t0\n300024\t3701123004957\tfailed\t0\t0\n300025\t8052204136254\tfailed\t0\t0\n300026\t3003720011131\tfailed\t0\t0\n300027\t3770014573179\tfailed\t0\t0\n300028\t3770014573209\tfailed\t0\t0\n300029\t3701415901346\tfailed\t0\t0\n300030\t3701415900066\tfailed\t0\t0\n300031\t3701415900134\tfailed\t0\t0\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

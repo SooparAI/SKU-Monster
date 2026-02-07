@@ -1,0 +1,9 @@
+{
+  "query": "INSERT INTO transactions (userId, type, amount, status, description, createdAt) VALUES (1, 'refund', 20.00, 'completed', 'Partial refund for Order #300008 - 2 of 14 SKUs failed (0 images)', NOW());",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute INSERT INTO transactions (userId, type, amount, status, description, createdAt) VALUES (1, 'refund', 20.00, 'completed', 'Partial refund for Order #300008 - 2 of 14 SKUs failed (0 images)', NOW());",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 61
+}

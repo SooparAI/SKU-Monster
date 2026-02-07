@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE orders SET status = 'partial', processedSkus = 14, zipFileUrl = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300008/Photo.1_Output_zXqSm0Rn.zip', zipFileKey = 'orders/300008/Photo.1_Output_zXqSm0Rn.zip' WHERE id = 300008;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute UPDATE orders SET status = 'partial', processedSkus = 14, zipFileUrl = 'https://d2xsxph8kpxj0f.cloudfront.net/310519663236298161/a56pqoKyYpysvDLAMeyVPv/orders/300008/Photo.1_Output_zXqSm0Rn.zip', zipFileKey = 'orders/300008/Photo.1_Output_zXqSm0Rn.zip' WHERE id = 300008;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 63
+}

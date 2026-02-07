@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, zipFileKey, createdAt, completedAt FROM orders WHERE id = 300008;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute SELECT id, status, totalSkus, processedSkus, totalCost, chargedAmount, zipFileUrl, zipFileKey, createdAt, completedAt FROM orders WHERE id = 300008;",
+  "rows": [
+    {
+      "id": "300008",
+      "status": "failed",
+      "totalSkus": "14",
+      "processedSkus": "5",
+      "totalCost": "140.00",
+      "chargedAmount": "140.00",
+      "zipFileUrl": "NULL",
+      "zipFileKey": "NULL",
+      "createdAt": "2026-02-07 20:39:24",
+      "completedAt": "2026-02-07 22:01:16"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tstatus\ttotalSkus\tprocessedSkus\ttotalCost\tchargedAmount\tzipFileUrl\tzipFileKey\tcreatedAt\tcompletedAt\n300008\tfailed\t14\t5\t140.00\t140.00\tNULL\tNULL\t2026-02-07 20:39:24\t2026-02-07 22:01:16\n",
+  "stderr": "",
+  "execution_time_ms": 90
+}

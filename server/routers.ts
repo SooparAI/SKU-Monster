@@ -793,8 +793,18 @@ setInterval(cleanupStuckOrders, 2 * 60 * 1000);
 setTimeout(cleanupStuckOrders, 10000);
 
 // Auto-refund a failed order by crediting the user's balance
+// Track which orders have already been refunded to prevent duplicate refunds
+const refundedOrders = new Set<number>();
+
 async function autoRefundOrder(orderId: number, skuCount: number) {
   try {
+    // CRITICAL: Prevent duplicate refunds (stuck cleanup + hard timeout can both trigger)
+    if (refundedOrders.has(orderId)) {
+      console.log(`[Refund] Order ${orderId} already refunded, skipping duplicate`);
+      return;
+    }
+    refundedOrders.add(orderId);
+    
     const order = await getOrderById(orderId);
     if (!order) {
       console.error(`[Refund] Order ${orderId} not found`);
