@@ -45,7 +45,7 @@ export default function Login() {
       <Card className="w-full max-w-md shadow-lg border-border/50">
         <CardHeader className="text-center pb-2">
           <div className="mx-auto mb-3">
-            <img src={LOGO_URL} alt="SKU Monster" className="h-20 w-20 mx-auto" />
+            <img src={LOGO_URL} alt="SKU Monster" className="h-48 w-48 mx-auto" />
           </div>
           <CardTitle className="text-2xl text-foreground">Welcome Back</CardTitle>
           <CardDescription>

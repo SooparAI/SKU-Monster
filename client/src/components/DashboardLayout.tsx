@@ -162,7 +162,7 @@ function DashboardLayoutContent({
                   <img
                     src={LOGO_URL}
                     alt="SKU Monster"
-                    className="h-8 w-8 shrink-0 rounded"
+                    className="h-20 w-20 shrink-0 rounded"
                   />
                   <span className="font-semibold tracking-tight truncate text-foreground">
                     SKU Monster

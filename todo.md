@@ -431,3 +431,4 @@
 - [x] Redesign Login/Register pages: clean white with logo
 - [x] Redesign Orders/OrderDetail pages: white cards, green status badges
 - [x] Redesign TopUp page: clean white with green buttons
+- [x] Make logo 250% bigger across all pages (sidebar, login, register)
