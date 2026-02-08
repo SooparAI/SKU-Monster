@@ -19,11 +19,11 @@ import {
 } from "lucide-react";
 
 const statusConfig = {
-  pending: { icon: Clock, color: "bg-yellow-500/20 text-yellow-500", label: "Pending" },
-  processing: { icon: Loader2, color: "bg-blue-500/20 text-blue-500", label: "Processing" },
-  completed: { icon: CheckCircle, color: "bg-green-500/20 text-green-500", label: "Completed" },
-  partial: { icon: AlertCircle, color: "bg-orange-500/20 text-orange-500", label: "Partial" },
-  failed: { icon: XCircle, color: "bg-red-500/20 text-red-500", label: "Failed" },
+  pending: { icon: Clock, color: "text-amber-600", bg: "bg-amber-50", label: "Pending" },
+  processing: { icon: Loader2, color: "text-blue-600", bg: "bg-blue-50", label: "Processing" },
+  completed: { icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", label: "Completed" },
+  partial: { icon: AlertCircle, color: "text-orange-600", bg: "bg-orange-50", label: "Partial" },
+  failed: { icon: XCircle, color: "text-red-600", bg: "bg-red-50", label: "Failed" },
 };
 
 export default function Orders() {
@@ -56,13 +56,13 @@ export default function Orders() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">Order History</h1>
-        <p className="text-muted-foreground">View and download your scraping results</p>
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Order History</h1>
+        <p className="text-muted-foreground text-sm">View and download your scraping results</p>
       </div>
 
       {orders && orders.length > 0 ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {orders.map((order) => {
             const status = statusConfig[order.status as keyof typeof statusConfig] || statusConfig.pending;
             const StatusIcon = status.icon;
@@ -72,30 +72,28 @@ export default function Orders() {
             return (
               <Card
                 key={order.id}
-                className={`cursor-pointer hover:border-primary/50 transition-colors ${
-                  isProcessing ? "border-blue-500/50" : isFailed ? "border-red-500/30" : ""
-                }`}
+                className="cursor-pointer hover:shadow-md transition-shadow border-border/60"
                 onClick={() => setLocation(`/orders/${order.id}`)}
               >
-                <CardContent className="p-6">
+                <CardContent className="p-5">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-xl ${status.color}`}>
+                    <div className="flex items-center gap-3.5">
+                      <div className={`p-2.5 rounded-lg ${status.bg}`}>
                         <StatusIcon
-                          className={`h-6 w-6 ${isProcessing ? "animate-spin" : ""}`}
+                          className={`h-5 w-5 ${status.color} ${isProcessing ? "animate-spin" : ""}`}
                         />
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="font-semibold">Order #{order.id}</h3>
-                          <Badge variant="outline" className={status.color}>
+                          <h3 className="font-medium text-foreground">Order #{order.id}</h3>
+                          <Badge variant="secondary" className={`${status.bg} ${status.color} border-0 text-xs font-medium`}>
                             {status.label}
                           </Badge>
                         </div>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-muted-foreground mt-0.5">
                           {order.processedSkus} of {order.totalSkus} SKUs processed
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-0.5">
                           {new Date(order.createdAt).toLocaleString()}
                         </p>
                       </div>
@@ -103,23 +101,22 @@ export default function Orders() {
 
                     <div className="flex items-center gap-3">
                       <div className="text-right">
-                        <p className="text-sm text-muted-foreground">Cost</p>
-                        <p className="font-semibold">${parseFloat(order.chargedAmount).toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground">Cost</p>
+                        <p className="font-semibold text-foreground">${parseFloat(order.chargedAmount).toFixed(2)}</p>
                       </div>
 
-                      {/* Retry button for failed orders */}
                       {isFailed && (
                         <Button
                           variant="outline"
                           size="sm"
-                          className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                          className="border-red-200 text-red-600 hover:bg-red-50"
                           onClick={(e) => {
                             e.stopPropagation();
                             retryMutation.mutate({ orderId: order.id });
                           }}
                           disabled={retryMutation.isPending}
                         >
-                          <RefreshCw className={`h-4 w-4 mr-2 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+                          <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retryMutation.isPending ? "animate-spin" : ""}`} />
                           Retry
                         </Button>
                       )}
@@ -133,27 +130,26 @@ export default function Orders() {
                             window.open(order.zipFileUrl!, "_blank");
                           }}
                         >
-                          <Download className="h-4 w-4 mr-2" />
+                          <Download className="h-3.5 w-3.5 mr-1.5" />
                           Download
                         </Button>
                       )}
 
-                      <ArrowRight className="h-5 w-5 text-muted-foreground" />
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </div>
 
-                  {/* Progress Bar for Processing Orders */}
                   {isProcessing && (
-                    <div className="mt-4">
+                    <div className="mt-3.5">
                       <div className="flex justify-between text-xs text-muted-foreground mb-1">
                         <span>Progress</span>
                         <span>
                           {order.processedSkus} / {order.totalSkus}
                         </span>
                       </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-primary transition-all duration-500"
+                          className="h-full bg-primary rounded-full transition-all duration-500"
                           style={{
                             width: `${(order.processedSkus / order.totalSkus) * 100}%`,
                           }}
@@ -167,14 +163,14 @@ export default function Orders() {
           })}
         </div>
       ) : (
-        <Card>
+        <Card className="border-dashed">
           <CardContent className="py-16 text-center">
-            <History className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
-            <h3 className="text-lg font-semibold mb-2">No orders yet</h3>
-            <p className="text-muted-foreground mb-4">
-              Start by entering SKUs on the home page to scrape product images
+            <History className="h-12 w-12 mx-auto mb-4 text-muted-foreground/40" />
+            <h3 className="text-lg font-medium mb-1 text-foreground">No orders yet</h3>
+            <p className="text-muted-foreground text-sm mb-4">
+              Start by entering SKUs to scrape product images
             </p>
-            <Button onClick={() => setLocation("/")}>
+            <Button onClick={() => setLocation("/")} size="sm">
               <Package className="h-4 w-4 mr-2" />
               Start Scraping
             </Button>

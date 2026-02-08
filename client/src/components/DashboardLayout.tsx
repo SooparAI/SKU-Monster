@@ -20,12 +20,13 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/useMobile";
-import { Search, History, Wallet, LogOut, PanelLeft, Camera } from "lucide-react";
+import { Search, History, Wallet, LogOut, PanelLeft } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation, Redirect } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
-import { Button } from "./ui/button";
 import { trpc } from "@/lib/trpc";
+
+const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663236298161/XBoIupephWpDIXkC.png";
 
 const menuItems = [
   { icon: Search, label: "Scrape SKUs", path: "/" },
@@ -57,7 +58,6 @@ export default function DashboardLayout({
     return <DashboardLayoutSkeleton />;
   }
 
-  // Redirect to login if not authenticated
   if (!user) {
     return <Redirect to="/login" />;
   }
@@ -145,7 +145,7 @@ function DashboardLayoutContent({
       <div className="relative" ref={sidebarRef}>
         <Sidebar
           collapsible="icon"
-          className="border-r-0"
+          className="border-r border-border/50"
           disableTransition={isResizing}
         >
           <SidebarHeader className="h-16 justify-center">
@@ -158,9 +158,13 @@ function DashboardLayoutContent({
                 <PanelLeft className="h-4 w-4 text-muted-foreground" />
               </button>
               {!isCollapsed ? (
-                <div className="flex items-center gap-2 min-w-0">
-                  <Camera className="h-5 w-5 text-primary shrink-0" />
-                  <span className="font-semibold tracking-tight truncate">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={LOGO_URL}
+                    alt="SKU Monster"
+                    className="h-8 w-8 shrink-0 rounded"
+                  />
+                  <span className="font-semibold tracking-tight truncate text-foreground">
                     SKU Monster
                   </span>
                 </div>
@@ -181,9 +185,9 @@ function DashboardLayoutContent({
                       className={`h-10 transition-all font-normal`}
                     >
                       <item.icon
-                        className={`h-4 w-4 ${isActive ? "text-primary" : ""}`}
+                        className={`h-4 w-4 ${isActive ? "text-primary" : "text-muted-foreground"}`}
                       />
-                      <span>{item.label}</span>
+                      <span className={isActive ? "text-primary font-medium" : ""}>{item.label}</span>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -193,8 +197,8 @@ function DashboardLayoutContent({
             {/* Balance Display */}
             {!isCollapsed && balanceData && (
               <div className="px-4 py-3 mt-4">
-                <div className="bg-primary/10 rounded-lg p-3">
-                  <p className="text-xs text-muted-foreground">Balance</p>
+                <div className="bg-primary/8 border border-primary/15 rounded-lg p-3">
+                  <p className="text-xs text-muted-foreground font-medium">Balance</p>
                   <p className="text-lg font-bold text-primary">
                     ${balanceData.balance.toFixed(2)}
                   </p>
@@ -208,12 +212,12 @@ function DashboardLayoutContent({
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-3 rounded-lg px-1 py-1 hover:bg-accent/50 transition-colors w-full text-left group-data-[collapsible=icon]:justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <Avatar className="h-9 w-9 border shrink-0">
-                    <AvatarFallback className="text-xs font-medium bg-primary/20 text-primary">
+                    <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
                       {user?.name?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
-                    <p className="text-sm font-medium truncate leading-none">
+                    <p className="text-sm font-medium truncate leading-none text-foreground">
                       {user?.name || "User"}
                     </p>
                     <p className="text-xs text-muted-foreground truncate mt-1.5">

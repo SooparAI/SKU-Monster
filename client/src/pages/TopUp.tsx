@@ -53,7 +53,6 @@ export default function TopUp() {
   } | null>(null);
   const [showSolanaDialog, setShowSolanaDialog] = useState(false);
 
-  // Parse URL params for success/cancel
   const params = new URLSearchParams(search);
   const isSuccess = params.get("success") === "true";
   const sessionId = params.get("session_id");
@@ -71,7 +70,6 @@ export default function TopUp() {
     enabled: !!user,
   });
 
-  // Verify checkout session on success
   const { data: checkoutStatus } = trpc.balance.verifyCheckout.useQuery(
     { sessionId: sessionId || "" },
     { enabled: !!sessionId && isSuccess }
@@ -113,13 +111,11 @@ export default function TopUp() {
     },
   });
 
-  // Handle success/cancel redirects
   useEffect(() => {
     if (isSuccess && checkoutStatus?.status === "paid") {
       toast.success(`Payment successful! $${checkoutStatus.amount.toFixed(2)} added to your balance.`);
       refetchBalance();
       refetchTransactions();
-      // Clear URL params
       setLocation("/topup", { replace: true });
     } else if (isCanceled) {
       toast.error("Payment was canceled.");
@@ -136,7 +132,6 @@ export default function TopUp() {
     setCustomAmount(value);
     const parsed = parseFloat(value);
     if (!isNaN(parsed) && parsed >= 10) {
-      // Calculate credits based on $10/SKU
       const credits = Math.floor(parsed / 10);
       setSelectedTier({ credits, price: parsed });
     }
@@ -152,10 +147,8 @@ export default function TopUp() {
 
     if (paymentMethod === "stripe") {
       createStripeCheckoutMutation.mutate({ amount: selectedTier.price });
-      // Don't set isProcessing to false here - user will be redirected
-      setTimeout(() => setIsProcessing(false), 5000); // Reset after 5s if redirect fails
+      setTimeout(() => setIsProcessing(false), 5000);
     } else {
-      // Solana Pay
       if (!solanaConfig?.enabled) {
         toast.error("Solana Pay is not configured");
         setIsProcessing(false);
@@ -184,36 +177,35 @@ export default function TopUp() {
   const balance = balanceData?.balance || 0;
   const skusAffordable = Math.floor((balance + selectedTier.price) / (balanceData?.pricePerSku || 10));
 
-  // Show success state
   if (isSuccess && sessionId) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
-            <ArrowLeft className="h-5 w-5" />
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="h-9 w-9">
+            <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Payment Successful</h1>
-            <p className="text-muted-foreground">Your balance has been updated</p>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Payment Successful</h1>
+            <p className="text-sm text-muted-foreground">Your balance has been updated</p>
           </div>
         </div>
 
-        <Card className="border-green-500/50 bg-green-500/5">
+        <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="py-12 text-center">
-            <div className="mx-auto w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-              <CheckCircle className="h-8 w-8 text-green-500" />
+            <div className="mx-auto w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center mb-4">
+              <CheckCircle className="h-7 w-7 text-emerald-600" />
             </div>
-            <h2 className="text-2xl font-bold mb-2">Thank you!</h2>
-            <p className="text-muted-foreground mb-6">
+            <h2 className="text-xl font-semibold mb-1.5 text-foreground">Thank you!</h2>
+            <p className="text-muted-foreground text-sm mb-6">
               {checkoutStatus?.amount
                 ? `$${checkoutStatus.amount.toFixed(2)} has been added to your balance.`
                 : "Your payment is being processed..."}
             </p>
-            <div className="flex gap-4 justify-center">
-              <Button onClick={() => setLocation("/")}>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={() => setLocation("/")} size="sm">
                 Start Scraping
               </Button>
-              <Button variant="outline" onClick={() => setLocation("/topup", { replace: true })}>
+              <Button variant="outline" size="sm" onClick={() => setLocation("/topup", { replace: true })}>
                 Top Up More
               </Button>
             </div>
@@ -226,45 +218,51 @@ export default function TopUp() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/")}>
-          <ArrowLeft className="h-5 w-5" />
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/")} className="h-9 w-9">
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Top Up Balance</h1>
-          <p className="text-muted-foreground">Add funds to your account</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Top Up Balance</h1>
+          <p className="text-sm text-muted-foreground">Add funds to your account</p>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Top Up Form */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5" />
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <DollarSign className="h-4.5 w-4.5 text-primary" />
               Select Credits
             </CardTitle>
             <CardDescription>Choose a credit package or enter a custom amount</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-5">
             {/* Preset Amounts */}
-            <div className="grid grid-cols-2 gap-3">
-              {PRESET_AMOUNTS.map((tier) => (
-                <Button
-                  key={tier.credits}
-                  variant={selectedTier.credits === tier.credits && !customAmount ? "default" : "outline"}
-                  className="h-20 flex flex-col gap-1"
-                  onClick={() => handleTierSelect(tier)}
-                >
-                  <span className="text-lg font-bold">{tier.credits} SKUs</span>
-                  <span className="text-sm opacity-80">${tier.price}</span>
-                </Button>
-              ))}
+            <div className="grid grid-cols-2 gap-2.5">
+              {PRESET_AMOUNTS.map((tier) => {
+                const isSelected = selectedTier.credits === tier.credits && !customAmount;
+                return (
+                  <button
+                    key={tier.credits}
+                    className={`h-[72px] flex flex-col items-center justify-center gap-0.5 rounded-lg border-2 transition-all ${
+                      isSelected
+                        ? "border-primary bg-primary/5 text-primary"
+                        : "border-border hover:border-primary/30 hover:bg-muted/30"
+                    }`}
+                    onClick={() => handleTierSelect(tier)}
+                  >
+                    <span className="text-base font-semibold">{tier.credits} SKUs</span>
+                    <span className="text-sm text-muted-foreground">${tier.price}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Custom Amount */}
-            <div className="space-y-2">
-              <Label htmlFor="custom-amount">Custom Amount (USD)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="custom-amount" className="text-sm">Custom Amount (USD)</Label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -282,21 +280,21 @@ export default function TopUp() {
             </div>
 
             {/* Payment Method */}
-            <div className="space-y-3">
-              <Label>Payment Method</Label>
+            <div className="space-y-2">
+              <Label className="text-sm">Payment Method</Label>
               <RadioGroup
                 value={paymentMethod}
                 onValueChange={(v) => setPaymentMethod(v as "stripe" | "solana")}
-                className="grid grid-cols-2 gap-3"
+                className="grid grid-cols-2 gap-2.5"
               >
                 <div>
                   <RadioGroupItem value="stripe" id="stripe" className="peer sr-only" />
                   <Label
                     htmlFor="stripe"
-                    className="flex flex-col items-center justify-between rounded-lg border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                    className="flex flex-col items-center justify-between rounded-lg border-2 border-border bg-background p-3.5 hover:bg-muted/30 peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-all"
                   >
-                    <CreditCard className="mb-3 h-6 w-6" />
-                    <span className="font-medium">Credit Card</span>
+                    <CreditCard className="mb-2 h-5 w-5 text-muted-foreground" />
+                    <span className="font-medium text-sm">Credit Card</span>
                     <span className="text-xs text-muted-foreground">via Stripe</span>
                   </Label>
                 </div>
@@ -304,12 +302,12 @@ export default function TopUp() {
                   <RadioGroupItem value="solana" id="solana" className="peer sr-only" disabled={!solanaConfig?.enabled} />
                   <Label
                     htmlFor="solana"
-                    className={`flex flex-col items-center justify-between rounded-lg border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer ${!solanaConfig?.enabled ? 'opacity-50' : ''}`}
+                    className={`flex flex-col items-center justify-between rounded-lg border-2 border-border bg-background p-3.5 hover:bg-muted/30 peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-all ${!solanaConfig?.enabled ? 'opacity-40 cursor-not-allowed' : ''}`}
                   >
-                    <svg className="mb-3 h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                    <svg className="mb-2 h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
                       <path d="M17.28 6.882a.714.714 0 0 0-.505-.21H4.286a.357.357 0 0 0-.252.61l2.679 2.678a.714.714 0 0 0 .505.21h12.489a.357.357 0 0 0 .252-.61l-2.679-2.678ZM6.72 17.118a.714.714 0 0 0 .505.21h12.489a.357.357 0 0 0 .252-.61l-2.679-2.678a.714.714 0 0 0-.505-.21H4.293a.357.357 0 0 0-.252.61l2.679 2.678ZM19.714 10.17H7.225a.714.714 0 0 0-.505.21l-2.679 2.678a.357.357 0 0 0 .252.61h12.489a.714.714 0 0 0 .505-.21l2.679-2.678a.357.357 0 0 0-.252-.61Z"/>
                     </svg>
-                    <span className="font-medium">Solana Pay</span>
+                    <span className="font-medium text-sm">Solana Pay</span>
                     <span className="text-xs text-muted-foreground">USDC</span>
                   </Label>
                 </div>
@@ -320,15 +318,15 @@ export default function TopUp() {
             <div className="bg-muted/30 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Current Balance</span>
-                <span>${balance.toFixed(2)}</span>
+                <span className="text-foreground">${balance.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Credits to Add</span>
-                <span className="text-primary">+{selectedTier.credits} SKUs (${selectedTier.price})</span>
+                <span className="text-primary font-medium">+{selectedTier.credits} SKUs (${selectedTier.price})</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-medium">
-                <span>New Balance</span>
-                <span>${(balance + selectedTier.price).toFixed(2)}</span>
+                <span className="text-foreground">New Balance</span>
+                <span className="text-foreground">${(balance + selectedTier.price).toFixed(2)}</span>
               </div>
               <div className="text-xs text-muted-foreground text-right">
                 ≈ {skusAffordable} total SKUs available
@@ -340,7 +338,6 @@ export default function TopUp() {
               onClick={handleTopUp}
               disabled={isProcessing || selectedTier.price < 15}
               className="w-full"
-              size="lg"
             >
               {isProcessing ? (
                 <>
@@ -355,7 +352,6 @@ export default function TopUp() {
               )}
             </Button>
 
-            {/* Test card info */}
             {paymentMethod === "stripe" && (
               <p className="text-xs text-center text-muted-foreground">
                 Test with card: 4242 4242 4242 4242
@@ -366,9 +362,9 @@ export default function TopUp() {
 
         {/* Transaction History */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Wallet className="h-5 w-5" />
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Wallet className="h-4.5 w-4.5 text-primary" />
               Recent Transactions
             </CardTitle>
             <CardDescription>Your payment and usage history</CardDescription>
@@ -376,23 +372,23 @@ export default function TopUp() {
           <CardContent>
             {!transactions || transactions.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
-                <Wallet className="h-12 w-12 mx-auto mb-3 opacity-20" />
-                <p>No transactions yet</p>
-                <p className="text-sm">Your payment history will appear here</p>
+                <Wallet className="h-10 w-10 mx-auto mb-3 opacity-20" />
+                <p className="text-sm font-medium">No transactions yet</p>
+                <p className="text-xs mt-0.5">Your payment history will appear here</p>
               </div>
             ) : (
-              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              <div className="space-y-2 max-h-[400px] overflow-y-auto">
                 {transactions.slice(0, 10).map((tx) => (
                   <div
                     key={tx.id}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/30"
+                    className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-muted/20"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2.5">
                       <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                           tx.type === "topup"
-                            ? "bg-green-500/20 text-green-500"
-                            : "bg-blue-500/20 text-blue-500"
+                            ? "bg-emerald-50 text-emerald-600"
+                            : "bg-blue-50 text-blue-600"
                         }`}
                       >
                         {tx.type === "topup" ? (
@@ -402,7 +398,7 @@ export default function TopUp() {
                         )}
                       </div>
                       <div>
-                        <p className="font-medium text-sm">
+                        <p className="font-medium text-sm text-foreground">
                           {tx.type === "topup" ? "Balance Top-up" : "SKU Scrape"}
                         </p>
                         <p className="text-xs text-muted-foreground">
@@ -412,8 +408,8 @@ export default function TopUp() {
                     </div>
                     <div className="text-right">
                       <p
-                        className={`font-medium ${
-                          tx.type === "topup" ? "text-green-500" : "text-foreground"
+                        className={`font-medium text-sm ${
+                          tx.type === "topup" ? "text-emerald-600" : "text-foreground"
                         }`}
                       >
                         {tx.type === "topup" ? "+" : "-"}${parseFloat(tx.amount).toFixed(2)}
@@ -421,10 +417,10 @@ export default function TopUp() {
                       <p
                         className={`text-xs ${
                           tx.status === "completed"
-                            ? "text-green-500"
+                            ? "text-emerald-600"
                             : tx.status === "pending"
-                            ? "text-yellow-500"
-                            : "text-red-500"
+                            ? "text-amber-600"
+                            : "text-red-600"
                         }`}
                       >
                         {tx.status}
@@ -455,15 +451,13 @@ export default function TopUp() {
 
           {solanaPaymentData && (
             <div className="space-y-4">
-              {/* Amount */}
-              <div className="bg-muted/50 rounded-lg p-4 text-center">
-                <p className="text-3xl font-bold">${solanaPaymentData.amount} USDC</p>
+              <div className="bg-muted/30 rounded-lg p-4 text-center">
+                <p className="text-2xl font-bold text-foreground">${solanaPaymentData.amount} USDC</p>
                 <p className="text-sm text-muted-foreground">{solanaPaymentData.credits} SKU Credits</p>
               </div>
 
-              {/* Wallet Address */}
-              <div className="space-y-2">
-                <Label>Send to this wallet address:</Label>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Send to this wallet address:</Label>
                 <div className="flex gap-2">
                   <Input
                     value={solanaPaymentData.walletAddress}
@@ -480,9 +474,8 @@ export default function TopUp() {
                 </div>
               </div>
 
-              {/* Reference */}
-              <div className="space-y-2">
-                <Label>Payment Reference (include in memo):</Label>
+              <div className="space-y-1.5">
+                <Label className="text-sm">Payment Reference (include in memo):</Label>
                 <div className="flex gap-2">
                   <Input
                     value={solanaPaymentData.reference}
@@ -499,7 +492,6 @@ export default function TopUp() {
                 </div>
               </div>
 
-              {/* Open in Wallet */}
               <Button
                 variant="outline"
                 className="w-full"
@@ -509,17 +501,15 @@ export default function TopUp() {
                 Open in Solana Wallet
               </Button>
 
-              {/* Instructions */}
-              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-sm">
-                <p className="font-medium text-yellow-500 mb-1">Important:</p>
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+                <p className="font-medium text-amber-700 mb-1">Important:</p>
                 <ul className="text-muted-foreground space-y-1 text-xs">
-                  <li>• Send exactly ${solanaPaymentData.amount} USDC (SPL Token)</li>
-                  <li>• Include the reference in your transaction memo</li>
-                  <li>• Click "I've Sent Payment" after completing the transfer</li>
+                  <li>Send exactly ${solanaPaymentData.amount} USDC (SPL Token)</li>
+                  <li>Include the reference in your transaction memo</li>
+                  <li>Click "I've Sent Payment" after completing the transfer</li>
                 </ul>
               </div>
 
-              {/* Confirm Button */}
               <Button
                 onClick={handleConfirmSolanaPayment}
                 disabled={confirmSolanaPaymentMutation.isPending}

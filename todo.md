@@ -421,3 +421,13 @@
 - [x] Integrate into scraperService: only call when ALL other methods return 0 images AND no product name
 - [x] Fix AI fallback: don't trigger with garbage names like "No product found"
 - [ ] Test with SKU 3003720011131 (requires publish + live order)
+
+## UI Redesign - White + Green Theme (Feb 7, 2026)
+- [x] Update logo across app (sidebar, login, register, favicon)
+- [x] Switch theme to light mode: white background, green accents matching logo
+- [x] Redesign global CSS variables for white/green palette
+- [x] Redesign DashboardLayout sidebar: white bg, green highlights
+- [x] Redesign Home page: simplistic white with green accents
+- [x] Redesign Login/Register pages: clean white with logo
+- [x] Redesign Orders/OrderDetail pages: white cards, green status badges
+- [x] Redesign TopUp page: clean white with green buttons

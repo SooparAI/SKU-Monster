@@ -21,12 +21,12 @@ import {
 import { toast } from "sonner";
 
 const statusConfig = {
-  pending: { icon: Clock, color: "bg-yellow-500/20 text-yellow-500", label: "Pending" },
-  processing: { icon: Loader2, color: "bg-blue-500/20 text-blue-500", label: "Processing" },
-  completed: { icon: CheckCircle, color: "bg-green-500/20 text-green-500", label: "Completed" },
-  partial: { icon: AlertCircle, color: "bg-orange-500/20 text-orange-500", label: "Partial" },
-  failed: { icon: XCircle, color: "bg-red-500/20 text-red-500", label: "Failed" },
-  skipped: { icon: AlertCircle, color: "bg-gray-500/20 text-gray-500", label: "Skipped" },
+  pending: { icon: Clock, color: "text-amber-600", bg: "bg-amber-50", label: "Pending" },
+  processing: { icon: Loader2, color: "text-blue-600", bg: "bg-blue-50", label: "Processing" },
+  completed: { icon: CheckCircle, color: "text-emerald-600", bg: "bg-emerald-50", label: "Completed" },
+  partial: { icon: AlertCircle, color: "text-orange-600", bg: "bg-orange-50", label: "Partial" },
+  failed: { icon: XCircle, color: "text-red-600", bg: "bg-red-50", label: "Failed" },
+  skipped: { icon: AlertCircle, color: "text-gray-500", bg: "bg-gray-50", label: "Skipped" },
 };
 
 export default function OrderDetail() {
@@ -50,7 +50,6 @@ export default function OrderDetail() {
     {
       enabled: !!user && orderId > 0,
       refetchInterval: (query) => {
-        // Keep refreshing while processing
         return query.state.data?.order?.status === "processing" ? 3000 : false;
       },
     }
@@ -67,8 +66,8 @@ export default function OrderDetail() {
   if (!data) {
     return (
       <div className="text-center py-16">
-        <h2 className="text-xl font-semibold mb-2">Order not found</h2>
-        <Button onClick={() => setLocation("/orders")}>
+        <h2 className="text-xl font-medium mb-2 text-foreground">Order not found</h2>
+        <Button onClick={() => setLocation("/orders")} variant="outline" size="sm">
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Orders
         </Button>
@@ -85,35 +84,36 @@ export default function OrderDetail() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => setLocation("/orders")}>
-          <ArrowLeft className="h-5 w-5" />
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" onClick={() => setLocation("/orders")} className="h-9 w-9">
+          <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold tracking-tight">Order #{order.id}</h1>
-            <Badge variant="outline" className={status.color}>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Order #{order.id}</h1>
+            <Badge variant="secondary" className={`${status.bg} ${status.color} border-0 text-xs font-medium`}>
               <StatusIcon className={`h-3 w-3 mr-1 ${isProcessing ? "animate-spin" : ""}`} />
               {status.label}
             </Badge>
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Created {new Date(order.createdAt).toLocaleString()}
           </p>
         </div>
         {order.zipFileUrl && (
-          <Button onClick={() => window.open(order.zipFileUrl!, "_blank")}>
-            <Download className="h-4 w-4 mr-2" />
+          <Button onClick={() => window.open(order.zipFileUrl!, "_blank")} size="sm">
+            <Download className="h-3.5 w-3.5 mr-1.5" />
             Download ZIP
           </Button>
         )}
         {(order.status === "failed" || order.status === "processing" || order.status === "pending") && (
           <Button
             variant="outline"
+            size="sm"
             onClick={() => retryMutation.mutate({ orderId: order.id })}
             disabled={retryMutation.isPending}
           >
-            <RefreshCw className={`h-4 w-4 mr-2 ${retryMutation.isPending ? "animate-spin" : ""}`} />
+            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retryMutation.isPending ? "animate-spin" : ""}`} />
             {retryMutation.isPending ? "Retrying..." : "Retry"}
           </Button>
         )}
@@ -121,21 +121,21 @@ export default function OrderDetail() {
 
       {/* Progress Card (for processing orders) */}
       {isProcessing && (
-        <Card className="border-blue-500/50 bg-blue-500/5">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4 mb-4">
-              <div className="p-3 rounded-xl bg-blue-500/20">
-                <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
+        <Card className="border-blue-200 bg-blue-50/50">
+          <CardContent className="p-5">
+            <div className="flex items-center gap-3.5 mb-3.5">
+              <div className="p-2.5 rounded-lg bg-blue-100">
+                <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
               </div>
               <div>
-                <h3 className="font-semibold">Scraping in Progress</h3>
+                <h3 className="font-medium text-foreground">Scraping in Progress</h3>
                 <p className="text-sm text-muted-foreground">
                   Processing {order.processedSkus} of {order.totalSkus} SKUs...
                 </p>
               </div>
             </div>
-            <Progress value={progress} className="h-3" />
-            <p className="text-xs text-muted-foreground mt-2 text-right">
+            <Progress value={progress} className="h-2" />
+            <p className="text-xs text-muted-foreground mt-1.5 text-right">
               {progress.toFixed(0)}% complete
             </p>
           </CardContent>
@@ -143,44 +143,44 @@ export default function OrderDetail() {
       )}
 
       {/* Order Summary */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-3">
         <Card>
-          <CardContent className="p-6">
+          <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-primary/20">
-                <Package className="h-5 w-5 text-primary" />
+              <div className="p-2 rounded-lg bg-primary/8">
+                <Package className="h-4.5 w-4.5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Total SKUs</p>
-                <p className="text-2xl font-bold">{order.totalSkus}</p>
+                <p className="text-xs text-muted-foreground font-medium">Total SKUs</p>
+                <p className="text-xl font-bold text-foreground">{order.totalSkus}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-6">
+          <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-green-500/20">
-                <CheckCircle className="h-5 w-5 text-green-500" />
+              <div className="p-2 rounded-lg bg-emerald-50">
+                <CheckCircle className="h-4.5 w-4.5 text-emerald-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Processed</p>
-                <p className="text-2xl font-bold">{order.processedSkus}</p>
+                <p className="text-xs text-muted-foreground font-medium">Processed</p>
+                <p className="text-xl font-bold text-foreground">{order.processedSkus}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardContent className="p-6">
+          <CardContent className="p-5">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-500/20">
-                <Image className="h-5 w-5 text-blue-500" />
+              <div className="p-2 rounded-lg bg-blue-50">
+                <Image className="h-4.5 w-4.5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Charged</p>
-                <p className="text-2xl font-bold">${parseFloat(order.chargedAmount).toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground font-medium">Charged</p>
+                <p className="text-xl font-bold text-foreground">${parseFloat(order.chargedAmount).toFixed(2)}</p>
               </div>
             </div>
           </CardContent>
@@ -189,15 +189,15 @@ export default function OrderDetail() {
 
       {/* SKU Items */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Store className="h-5 w-5" />
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Store className="h-4.5 w-4.5 text-primary" />
             SKU Results
           </CardTitle>
           <CardDescription>Individual results for each SKU in this order</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {items.map((item) => {
               const itemStatus =
                 statusConfig[item.status as keyof typeof statusConfig] || statusConfig.pending;
@@ -207,17 +207,17 @@ export default function OrderDetail() {
               return (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-4 rounded-lg bg-muted/30"
+                  className="flex items-center justify-between p-3.5 rounded-lg border border-border/50 bg-muted/20"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-lg ${itemStatus.color}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${itemStatus.bg}`}>
                       <ItemStatusIcon
-                        className={`h-4 w-4 ${isItemProcessing ? "animate-spin" : ""}`}
+                        className={`h-4 w-4 ${itemStatus.color} ${isItemProcessing ? "animate-spin" : ""}`}
                       />
                     </div>
                     <div>
-                      <p className="font-mono font-medium">{item.sku}</p>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="font-mono font-medium text-sm text-foreground">{item.sku}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
                         {item.status === "completed" || (item.status as string) === "partial"
                           ? `${item.imagesFound} images found`
                           : (item.status as string) === "skipped"
@@ -230,7 +230,7 @@ export default function OrderDetail() {
                       </p>
                     </div>
                   </div>
-                  <Badge variant="outline" className={itemStatus.color}>
+                  <Badge variant="secondary" className={`${itemStatus.bg} ${itemStatus.color} border-0 text-xs`}>
                     {itemStatus.label}
                   </Badge>
                 </div>
@@ -240,28 +240,28 @@ export default function OrderDetail() {
         </CardContent>
       </Card>
 
-      {/* Download Section (for completed orders) */}
+      {/* Download Section */}
       {order.zipFileUrl && (order.status === "completed" || order.status === "partial") && (
-        <Card className="border-green-500/50 bg-green-500/5">
-          <CardContent className="p-6">
+        <Card className="border-emerald-200 bg-emerald-50/50">
+          <CardContent className="p-5">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-green-500/20">
-                  <Download className="h-6 w-6 text-green-500" />
+              <div className="flex items-center gap-3.5">
+                <div className="p-2.5 rounded-lg bg-emerald-100">
+                  <Download className="h-5 w-5 text-emerald-600" />
                 </div>
                 <div>
-                  <h3 className="font-semibold">Download Ready</h3>
+                  <h3 className="font-medium text-foreground">Download Ready</h3>
                   <p className="text-sm text-muted-foreground">
-                    Your SKU Monster Output ZIP file is ready for download
+                    Your images are packaged and ready for download
                   </p>
                 </div>
               </div>
               <Button
-                size="lg"
                 onClick={() => window.open(order.zipFileUrl!, "_blank")}
+                size="sm"
               >
-                <Download className="h-4 w-4 mr-2" />
-                Download SKU Monster Output.zip
+                <Download className="h-3.5 w-3.5 mr-1.5" />
+                Download ZIP
               </Button>
             </div>
           </CardContent>

@@ -1,7 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -76,18 +75,15 @@ export default function Home() {
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 }) as string[][];
 
-      // Extract all values and join them
       const allValues = jsonData.flat().filter(Boolean).join("\n");
       setSkuInput(allValues);
       toast.success(`Loaded ${file.name}`);
 
-      // Auto-parse after loading
       parseSkusMutation.mutate({ text: allValues });
     } catch (error) {
       toast.error("Failed to read file. Please ensure it's a valid CSV or Excel file.");
     }
 
-    // Reset file input
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -133,32 +129,32 @@ export default function Home() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">SKU Monster</h1>
-        <p className="text-muted-foreground">
-          Enter product SKUs to scrape images from 20+ online retailers
+      <div className="flex flex-col gap-1">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Scrape SKUs</h1>
+        <p className="text-muted-foreground text-sm">
+          Enter product SKUs to scrape HQ images from 20+ online retailers
         </p>
       </div>
 
       {/* Balance Card */}
-      <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-        <CardContent className="p-6">
+      <Card className="border-primary/15 bg-primary/3">
+        <CardContent className="p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-primary/20">
-                <Wallet className="h-6 w-6 text-primary" />
+              <div className="p-2.5 rounded-xl bg-primary/10">
+                <Wallet className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Available Balance</p>
-                <p className="text-3xl font-bold">${balance.toFixed(2)}</p>
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Available Balance</p>
+                <p className="text-2xl font-bold text-foreground">${balance.toFixed(2)}</p>
               </div>
             </div>
-            <div className="flex flex-col items-end gap-2">
-              <Button onClick={() => setLocation("/topup")} variant="default">
-                <DollarSign className="h-4 w-4 mr-2" />
+            <div className="flex flex-col items-end gap-1.5">
+              <Button onClick={() => setLocation("/topup")} size="sm">
+                <DollarSign className="h-3.5 w-3.5 mr-1.5" />
                 Top Up
               </Button>
-              <p className="text-xs text-muted-foreground">${pricePerSku} per SKU (~3 HQ images)</p>
+              <p className="text-xs text-muted-foreground">${pricePerSku}/SKU</p>
             </div>
           </div>
         </CardContent>
@@ -166,9 +162,9 @@ export default function Home() {
 
       {/* SKU Input Section */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Search className="h-5 w-5" />
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Search className="h-4.5 w-4.5 text-primary" />
             Enter SKUs
           </CardTitle>
           <CardDescription>
@@ -184,11 +180,11 @@ export default function Home() {
 
             <TabsContent value="text" className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="sku-input">SKU Numbers</Label>
+                <Label htmlFor="sku-input" className="text-foreground">SKU Numbers</Label>
                 <Textarea
                   id="sku-input"
                   placeholder="Enter SKU numbers (one per line, comma-separated, or paste from spreadsheet)&#10;&#10;Example:&#10;701666410164&#10;3770006409028&#10;3614225621932"
-                  className="min-h-[200px] font-mono"
+                  className="min-h-[180px] font-mono text-sm"
                   value={skuInput}
                   onChange={(e) => setSkuInput(e.target.value)}
                 />
@@ -208,7 +204,7 @@ export default function Home() {
             </TabsContent>
 
             <TabsContent value="file" className="space-y-4">
-              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center">
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/30 transition-colors">
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -219,14 +215,14 @@ export default function Home() {
                 />
                 <label
                   htmlFor="file-upload"
-                  className="cursor-pointer flex flex-col items-center gap-4"
+                  className="cursor-pointer flex flex-col items-center gap-3"
                 >
-                  <div className="p-4 rounded-full bg-muted">
-                    <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+                  <div className="p-3 rounded-full bg-muted">
+                    <FileSpreadsheet className="h-7 w-7 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="font-medium">Click to upload CSV or Excel file</p>
-                    <p className="text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">Click to upload CSV or Excel file</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
                       Supports .csv, .xlsx, and .xls files
                     </p>
                   </div>
@@ -240,23 +236,23 @@ export default function Home() {
       {/* Parsed SKUs Preview */}
       {parsedSkus.length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Package className="h-5 w-5" />
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Package className="h-4.5 w-4.5 text-primary" />
               Ready to Process
             </CardTitle>
             <CardDescription>
-              {parsedSkus.length} SKU(s) found - Total cost: ${totalCost.toFixed(2)}
+              {parsedSkus.length} SKU(s) found — Total cost: ${totalCost.toFixed(2)}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {/* SKU List */}
-            <div className="bg-muted/50 rounded-lg p-4 max-h-[200px] overflow-y-auto">
+            <div className="bg-muted/40 rounded-lg p-4 max-h-[200px] overflow-y-auto">
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                 {parsedSkus.map((sku, index) => (
                   <div
                     key={index}
-                    className="bg-background px-3 py-2 rounded-md text-sm font-mono border"
+                    className="bg-background px-3 py-2 rounded-md text-sm font-mono border border-border/60 text-foreground"
                   >
                     {sku}
                   </div>
@@ -268,15 +264,15 @@ export default function Home() {
             <div className="bg-muted/30 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">SKUs to process</span>
-                <span>{parsedSkus.length}</span>
+                <span className="text-foreground">{parsedSkus.length}</span>
               </div>
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Price per SKU (~3 HQ images)</span>
-                <span>${pricePerSku.toFixed(2)}</span>
+                <span className="text-muted-foreground">Price per SKU</span>
+                <span className="text-foreground">${pricePerSku.toFixed(2)}</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-medium">
-                <span>Total Cost</span>
-                <span>${totalCost.toFixed(2)}</span>
+                <span className="text-foreground">Total Cost</span>
+                <span className="text-primary">${totalCost.toFixed(2)}</span>
               </div>
               {!canAfford && (
                 <div className="flex items-center gap-2 text-destructive text-sm mt-2">
@@ -285,7 +281,7 @@ export default function Home() {
                 </div>
               )}
               {canAfford && affordableSkus < parsedSkus.length && (
-                <div className="flex items-center gap-2 text-yellow-500 text-sm mt-2">
+                <div className="flex items-center gap-2 text-amber-600 text-sm mt-2">
                   <AlertCircle className="h-4 w-4" />
                   <span>
                     You can only process {affordableSkus} of {parsedSkus.length} SKUs with your

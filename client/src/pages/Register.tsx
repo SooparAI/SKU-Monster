@@ -6,7 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Camera, Loader2, Mail, Lock, User } from "lucide-react";
+import { Loader2, Mail, Lock, User } from "lucide-react";
+
+const LOGO_URL = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663236298161/XBoIupephWpDIXkC.png";
 
 export default function Register() {
   const [, setLocation] = useLocation();
@@ -54,12 +56,12 @@ export default function Register() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 p-3 rounded-xl bg-primary/20 w-fit">
-            <Camera className="h-8 w-8 text-primary" />
+      <Card className="w-full max-w-md shadow-lg border-border/50">
+        <CardHeader className="text-center pb-2">
+          <div className="mx-auto mb-3">
+            <img src={LOGO_URL} alt="SKU Monster" className="h-20 w-20 mx-auto" />
           </div>
-          <CardTitle className="text-2xl">Create Account</CardTitle>
+          <CardTitle className="text-2xl text-foreground">Create Account</CardTitle>
           <CardDescription>
             Sign up to start scraping product images
           </CardDescription>
@@ -67,7 +69,7 @@ export default function Register() {
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
+              <Label htmlFor="name" className="text-foreground">Full Name</Label>
               <div className="relative">
                 <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -83,7 +85,7 @@ export default function Register() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email" className="text-foreground">Email</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -99,7 +101,7 @@ export default function Register() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password" className="text-foreground">Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -118,7 +120,7 @@ export default function Register() {
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <Label htmlFor="confirmPassword" className="text-foreground">Confirm Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -147,7 +149,7 @@ export default function Register() {
             </Button>
             <p className="text-sm text-muted-foreground text-center">
               Already have an account?{" "}
-              <Link href="/login" className="text-primary hover:underline">
+              <Link href="/login" className="text-primary hover:underline font-medium">
                 Sign in
               </Link>
             </p>
