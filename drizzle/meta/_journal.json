@@ -29,6 +29,13 @@
       "when": 1770484985484,
       "tag": "0003_lame_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1771000577093,
+      "tag": "0004_hard_tigra",
+      "breakpoints": true
     }
   ]
 }
