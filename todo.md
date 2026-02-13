@@ -432,3 +432,8 @@
 - [x] Redesign Orders/OrderDetail pages: white cards, green status badges
 - [x] Redesign TopUp page: clean white with green buttons
 - [x] Make logo 250% bigger across all pages (sidebar, login, register)
+
+## Image Quality: Uniform Dimensions & Watermark Filtering (Feb 13, 2026)
+- [x] Normalize all scraped images to uniform dimensions (square 1000x1000 with white background padding)
+- [x] Add lightweight watermark detection to filter out watermarked images (pixel heuristics, no AI)
+- [x] Keep total cost per SKU under $0.05 (no expensive AI image checks)

@@ -17,6 +17,7 @@
 import { storagePut } from '../storage';
 import { nanoid } from 'nanoid';
 import Replicate from 'replicate';
+import { normalizeImage, detectWatermark } from './imagePostProcess';
 
 // Dynamic sharp import - may not be available in all environments
 let sharpModule: any = null;
@@ -300,6 +301,20 @@ async function scoreImage(imageUrl: string): Promise<{
       } catch { /* ignore */ }
     }
     
+    // Watermark detection — penalize watermarked images
+    if (buffer && buffer.length > 5000) {
+      try {
+        const wm = await detectWatermark(buffer);
+        if (wm.score >= 60) {
+          score -= 40; // Heavy penalty — likely watermarked
+          console.log(`[HQ Score] Watermark detected (${wm.score}): ${wm.reason}`);
+        } else if (wm.score >= 40) {
+          score -= 20; // Moderate penalty — possibly watermarked
+          console.log(`[HQ Score] Possible watermark (${wm.score}): ${wm.reason}`);
+        }
+      } catch { /* ignore watermark detection errors */ }
+    }
+
     const finalScore = Math.max(0, Math.min(100, score));
     console.log(`[HQ Score] ${finalScore}: ${imageUrl.substring(0, 60)}... (${width}x${height}, ${sizeKB.toFixed(1)}KB)`);
     return { score: finalScore, width, height, sizeKB, buffer };
@@ -354,50 +369,56 @@ async function uploadAndUpscaleImage(
 ): Promise<{ s3Url: string; s3Key: string; width: number; height: number; sizeKB: number; upscaled: boolean } | null> {
   try {
     const ext = 'png'; // Use PNG for best quality
+    let finalBuffer = buffer;
+    let finalW = width;
+    let finalH = height;
+    let wasUpscaled = false;
     
     // Determine if upscaling is needed
     const scaleFactor = getUpscaleFactor(width, height);
     
-    if (scaleFactor === 0) {
-      // Already large enough — upload directly
-      const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${width}x${height}_${nanoid(6)}.${ext}`;
-      const { url: s3Url } = await storagePut(s3Key, buffer, 'image/png');
-      console.log(`[HQ Upload] ✓ Already HQ (${width}x${height}), uploaded directly: ${s3Key}`);
-      return { s3Url, s3Key, width, height, sizeKB: buffer.length / 1024, upscaled: false };
-    }
-    
-    // Upload original to S3 first so Real-ESRGAN can access it
-    const tempKey = `scrapes/temp_upscale_${nanoid(8)}.${ext}`;
-    const { url: tempS3Url } = await storagePut(tempKey, buffer, 'image/png');
-    
-    // AI upscale with Real-ESRGAN
-    console.log(`[HQ Pipeline] Upscaling ${width}x${height} by ${scaleFactor}x...`);
-    const upscaledBuffer = await aiUpscale(tempS3Url, scaleFactor);
-    
-    if (upscaledBuffer && upscaledBuffer.length > buffer.length) {
-      // Verify dimensions with sharp if available
-      let newW = width * scaleFactor;
-      let newH = height * scaleFactor;
-      const sharp = await getSharp();
-      if (sharp) {
-        try {
-          const meta = await sharp(upscaledBuffer).metadata();
-          newW = meta.width || newW;
-          newH = meta.height || newH;
-        } catch { /* use calculated */ }
-      }
+    if (scaleFactor > 0) {
+      // Upload original to S3 first so Real-ESRGAN can access it
+      const tempKey = `scrapes/temp_upscale_${nanoid(8)}.${ext}`;
+      const { url: tempS3Url } = await storagePut(tempKey, buffer, 'image/png');
       
-      const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${newW}x${newH}_${nanoid(6)}.${ext}`;
-      const { url: s3Url } = await storagePut(s3Key, upscaledBuffer, 'image/png');
-      console.log(`[HQ Upload] ✓ Upscaled ${width}x${height} → ${newW}x${newH} (${(upscaledBuffer.length / 1024).toFixed(1)}KB): ${s3Key}`);
-      return { s3Url, s3Key, width: newW, height: newH, sizeKB: upscaledBuffer.length / 1024, upscaled: true };
+      // AI upscale with Real-ESRGAN
+      console.log(`[HQ Pipeline] Upscaling ${width}x${height} by ${scaleFactor}x...`);
+      const upscaledBuffer = await aiUpscale(tempS3Url, scaleFactor);
+      
+      if (upscaledBuffer && upscaledBuffer.length > buffer.length) {
+        finalBuffer = upscaledBuffer;
+        finalW = width * scaleFactor;
+        finalH = height * scaleFactor;
+        wasUpscaled = true;
+        const sharp = await getSharp();
+        if (sharp) {
+          try {
+            const meta = await sharp(upscaledBuffer).metadata();
+            finalW = meta.width || finalW;
+            finalH = meta.height || finalH;
+          } catch { /* use calculated */ }
+        }
+        console.log(`[HQ Upload] Upscaled ${width}x${height} → ${finalW}x${finalH}`);
+      } else {
+        console.warn(`[HQ Pipeline] Upscale failed, using original ${width}x${height}`);
+      }
     }
     
-    // Upscale failed — use the original (already uploaded as temp)
-    console.warn(`[HQ Pipeline] Upscale failed, using original ${width}x${height}`);
-    const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${width}x${height}_${nanoid(6)}.${ext}`;
-    const { url: s3Url } = await storagePut(s3Key, buffer, 'image/png');
-    return { s3Url, s3Key, width, height, sizeKB: buffer.length / 1024, upscaled: false };
+    // === NORMALIZE: Resize and pad to uniform 1000x1000 white-background square ===
+    const normalized = await normalizeImage(finalBuffer);
+    if (normalized) {
+      finalBuffer = normalized.buffer;
+      finalW = normalized.width;
+      finalH = normalized.height;
+      console.log(`[HQ Upload] Normalized to ${finalW}x${finalH}`);
+    }
+    
+    // Upload final image to S3
+    const s3Key = `scrapes/${sku}/HQ_${source}_${index}_${finalW}x${finalH}_${nanoid(6)}.${ext}`;
+    const { url: s3Url } = await storagePut(s3Key, finalBuffer, 'image/png');
+    console.log(`[HQ Upload] ✓ ${s3Key} (${(finalBuffer.length / 1024).toFixed(1)}KB)`);
+    return { s3Url, s3Key, width: finalW, height: finalH, sizeKB: finalBuffer.length / 1024, upscaled: wasUpscaled };
   } catch (err) {
     console.error(`[HQ Upload] Failed for image ${index}: ${err}`);
     return null;
