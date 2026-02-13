@@ -13,7 +13,7 @@
  * - Real product photos from retailers are the ONLY source
  * - NO background removal (rembg causes edge artifacts on product images)
  * - Upscale + white pad = clean studio quality
- * - Target: 3 images, each 2000x2000, 1-3MB, pure white background
+ * * Target: 5 images, each 2000x2000, 1-3MB, pure white background
  * - Cost budget: ~$0.002/image × 3 = $0.006/SKU (well under $0.05)
  */
 
@@ -342,17 +342,17 @@ async function simpleWhitePad(
       .resize(fitW, fitH, { fit: 'inside', withoutEnlargement: false, kernel: 'lanczos3' })
       .toBuffer();
 
-    // Use compressionLevel 0 (no compression) to ensure file size >900KB for Amazon/eBay
+    // Use compressionLevel 6 (balanced) to target 1-3MB file size for Amazon/eBay
     const padded = await sharp({
       create: {
         width: targetSize,
         height: targetSize,
-        channels: 3,
-        background: { r: 255, g: 255, b: 255 },
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 1 },
       },
     })
       .composite([{ input: resized, gravity: 'centre' }])
-      .png({ compressionLevel: 0 }) // No compression = larger files (>900KB)
+      .png({ compressionLevel: 6 }) // Balanced compression = 1-3MB target
       .toBuffer();
 
     return { buffer: padded, width: targetSize, height: targetSize };
@@ -368,7 +368,8 @@ function getUpscaleFactor(width: number, height: number): number {
   const minDim = Math.min(width, height);
   const totalPixels = width * height;
 
-  if (minDim >= 2000) return 0; // Already large enough
+  // Skip upscaling for images ≥1500px to preserve text quality (AI upscalers distort text)
+  if (minDim >= 1500) return 0; // Already high-res, avoid text artifacts
   if (minDim >= 1000) {
     if (totalPixels > 2_000_000) return 0;
     return 2;

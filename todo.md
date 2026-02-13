@@ -478,3 +478,10 @@
 - [x] Update pricing from $10 to $2 per SKU across entire system (SKU_PRICE = 2)
 - [x] Update Stripe products and test files (PRESET_AMOUNTS, SOLANA_PRICE_TIERS, balance.test.ts)
 - [x] All 51 tests passing, 0 TypeScript errors
+
+
+## File Size & Text Quality Fix (Feb 13, 2026)
+- [x] Reduce PNG file size from 15MB to 1-3MB target (compressionLevel: 6)
+- [x] Skip upscaling for images already ≥1500px to preserve text quality and avoid AI artifacts
+- [x] Prioritize original high-res retailer images over upscaled versions (getUpscaleFactor updated)
+- [x] Test and verify: 0 TypeScript errors, 49/51 tests pass (2 network timeouts)
