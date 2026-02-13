@@ -180,17 +180,17 @@ export default function Home() {
       return;
     }
 
-    const totalCost = parsedSkus.length * (balanceData?.pricePerSku || 10);
+    const totalCost = parsedSkus.length * (balanceData?.pricePerSku || 2);
     const balance = balanceData?.balance || 0;
 
-    if (balance < (balanceData?.pricePerSku || 10)) {
+    if (balance < (balanceData?.pricePerSku || 2)) {
       toast.error("Insufficient balance. Please top up to continue.");
       setLocation("/topup");
       return;
     }
 
     if (balance < totalCost) {
-      const affordableSkus = Math.floor(balance / (balanceData?.pricePerSku || 10));
+      const affordableSkus = Math.floor(balance / (balanceData?.pricePerSku || 2));
       toast.warning(
         `You can only process ${affordableSkus} of ${parsedSkus.length} SKUs with your current balance.`
       );
@@ -206,7 +206,7 @@ export default function Home() {
   };
 
   const balance = balanceData?.balance || 0;
-  const pricePerSku = balanceData?.pricePerSku || 10;
+  const pricePerSku = balanceData?.pricePerSku || 2;
   const totalCost = parsedSkus.length * pricePerSku;
   const canAfford = balance >= pricePerSku;
   const affordableSkus = Math.floor(balance / pricePerSku);

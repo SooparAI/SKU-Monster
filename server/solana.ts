@@ -8,13 +8,13 @@ export const SOLANA_CONFIG = {
   // SOL price will be fetched dynamically, but we'll use USDC for stable pricing
 };
 
-// Price tiers in USD (same as Stripe)
+// Price tiers in USD (same as Stripe) - $2 per SKU
 export const SOLANA_PRICE_TIERS = [
-  { credits: 5, price: 75, label: "5 SKUs" },
-  { credits: 10, price: 150, label: "10 SKUs" },
-  { credits: 25, price: 375, label: "25 SKUs" },
-  { credits: 50, price: 750, label: "50 SKUs" },
-  { credits: 100, price: 1500, label: "100 SKUs" },
+  { credits: 5, price: 10, label: "5 SKUs" },
+  { credits: 10, price: 20, label: "10 SKUs" },
+  { credits: 25, price: 50, label: "25 SKUs" },
+  { credits: 50, price: 100, label: "50 SKUs" },
+  { credits: 100, price: 200, label: "100 SKUs" },
 ];
 
 /**

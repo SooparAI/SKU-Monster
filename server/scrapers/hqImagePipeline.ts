@@ -342,6 +342,7 @@ async function simpleWhitePad(
       .resize(fitW, fitH, { fit: 'inside', withoutEnlargement: false, kernel: 'lanczos3' })
       .toBuffer();
 
+    // Use compressionLevel 0 (no compression) to ensure file size >900KB for Amazon/eBay
     const padded = await sharp({
       create: {
         width: targetSize,
@@ -351,7 +352,7 @@ async function simpleWhitePad(
       },
     })
       .composite([{ input: resized, gravity: 'centre' }])
-      .png({ compressionLevel: 3 })
+      .png({ compressionLevel: 0 }) // No compression = larger files (>900KB)
       .toBuffer();
 
     return { buffer: padded, width: targetSize, height: targetSize };
@@ -518,7 +519,7 @@ async function processStudioImage(
 }
 
 // Minimum number of images we want in the output
-const TARGET_IMAGE_COUNT = 3;
+const TARGET_IMAGE_COUNT = 5;
 
 /**
  * Main HQ Pipeline v2 — STUDIO QUALITY, NO AI GENERATION

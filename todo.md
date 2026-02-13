@@ -469,3 +469,12 @@
 - [x] Output upscaled images as-is (most retailer images already have white backgrounds)
 - [x] Remove dead code: removeBackground(), studioComposite(), REMBG_MODEL, STUDIO_BG
 - [x] Test and verify pipeline still works (0 TypeScript errors, 49/51 tests pass — 2 network timeouts)
+
+
+## Output Consistency & Pricing Update (Feb 13, 2026)
+- [x] Enforce consistent output specs: 2000×2000 PNG, minimum 900KB file size (for Amazon/eBay compliance)
+- [x] Adjust PNG compression to ensure files are >900KB (compressionLevel: 0)
+- [x] Increase output count from 3 to 5 images per SKU (TARGET_IMAGE_COUNT = 5)
+- [x] Update pricing from $10 to $2 per SKU across entire system (SKU_PRICE = 2)
+- [x] Update Stripe products and test files (PRESET_AMOUNTS, SOLANA_PRICE_TIERS, balance.test.ts)
+- [x] All 51 tests passing, 0 TypeScript errors

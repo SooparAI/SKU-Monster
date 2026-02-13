@@ -29,10 +29,10 @@ import {
 } from "@/components/ui/dialog";
 
 const PRESET_AMOUNTS = [
-  { credits: 5, price: 75 },
-  { credits: 10, price: 150 },
-  { credits: 25, price: 375 },
-  { credits: 50, price: 750 },
+  { credits: 5, price: 10 },
+  { credits: 10, price: 20 },
+  { credits: 25, price: 50 },
+  { credits: 50, price: 100 },
 ];
 
 export default function TopUp() {
@@ -138,8 +138,8 @@ export default function TopUp() {
   };
 
   const handleTopUp = async () => {
-    if (selectedTier.price < 15) {
-      toast.error("Minimum top-up amount is $15");
+    if (selectedTier.price < 10) {
+      toast.error("Minimum top-up amount is $10");
       return;
     }
 
@@ -175,7 +175,7 @@ export default function TopUp() {
   };
 
   const balance = balanceData?.balance || 0;
-  const skusAffordable = Math.floor((balance + selectedTier.price) / (balanceData?.pricePerSku || 10));
+  const skusAffordable = Math.floor((balance + selectedTier.price) / (balanceData?.pricePerSku || 2));
 
   if (isSuccess && sessionId) {
     return (
@@ -276,7 +276,7 @@ export default function TopUp() {
                   onChange={(e) => handleCustomAmountChange(e.target.value)}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">$10 per SKU (~3 HQ images)</p>
+              <p className="text-xs text-muted-foreground">$2 per SKU (5 HQ images)</p>
             </div>
 
             {/* Payment Method */}
@@ -336,7 +336,7 @@ export default function TopUp() {
             {/* Submit Button */}
             <Button
               onClick={handleTopUp}
-              disabled={isProcessing || selectedTier.price < 15}
+              disabled={isProcessing || selectedTier.price < 10}
               className="w-full"
             >
               {isProcessing ? (

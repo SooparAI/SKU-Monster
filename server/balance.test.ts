@@ -57,7 +57,7 @@ vi.mock("./db", () => ({
     },
   ]),
   saveScrapedImages: vi.fn().mockResolvedValue(undefined),
-  SKU_PRICE: 10,
+  SKU_PRICE: 2,
 }));
 
 // Mock the scraper service
@@ -145,7 +145,7 @@ describe("balance router", () => {
 
     expect(result).toEqual({
       balance: 100,
-      pricePerSku: 10,
+      pricePerSku: 2,
     });
   });
 
@@ -200,7 +200,7 @@ describe("orders router", () => {
 
     expect(result.skus).toContain("701666410164");
     expect(result.skus).toContain("3770006409028");
-    expect(result.pricePerSku).toBe(10);
+    expect(result.pricePerSku).toBe(2);
   });
 
   it("returns user orders list", async () => {

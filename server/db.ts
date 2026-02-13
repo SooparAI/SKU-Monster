@@ -424,4 +424,4 @@ export function createStepLogger(orderId: number, sku: string) {
 }
 
 // Pricing constant
-export const SKU_PRICE = 10; // $10 per SKU (~3 HQ images)
+export const SKU_PRICE = 2; // $2 per SKU (5 HQ images, 2000x2000, >900KB each)
