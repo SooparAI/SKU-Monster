@@ -53,6 +53,11 @@ export const orders = mysqlTable("orders", {
   chargedAmount: decimal("chargedAmount", { precision: 10, scale: 2 }).default("0.00").notNull(),
   zipFileUrl: text("zipFileUrl"),
   zipFileKey: varchar("zipFileKey", { length: 512 }),
+  // Excel batch processing fields
+  sourceType: varchar("sourceType", { length: 32 }).default("text").notNull(), // 'text' or 'excel'
+  sourceFileName: varchar("sourceFileName", { length: 255 }), // Original Excel filename
+  excelFileUrl: text("excelFileUrl"), // S3 URL for output Excel with images
+  excelFileKey: varchar("excelFileKey", { length: 512 }), // S3 key for the file
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   completedAt: timestamp("completedAt"),
 });

@@ -28,6 +28,7 @@ import {
   runScrapeJob,
   parseSkusFromText,
 } from "./scrapers/scraperService";
+import { processExcelWithImagesExcelJS } from "./scrapers/excelProcessor";
 import { getActiveStores } from "./scrapers/storeConfigs";
 import { invokeLLM } from "./_core/llm";
 import { TRPCError } from "@trpc/server";
@@ -35,6 +36,34 @@ import { createTopupCheckoutSession, getCheckoutSession } from "./stripe";
 import { registerUser, loginUser, createToken, getUserById } from "./auth";
 import { generateSolanaPayUrl, getWalletAddress, isSolanaConfigured, SOLANA_PRICE_TIERS } from "./solana";
 import { nanoid } from "nanoid";
+
+// Background worker for Excel order processing
+async function processExcelOrder(orderId: number, fileBuffer: Buffer) {
+  try {
+    console.log(`[Excel Order ${orderId}] Starting background processing`);
+    
+    const result = await processExcelWithImagesExcelJS(fileBuffer, orderId);
+    
+    // Update order with output file URL
+    await updateOrder(orderId, {
+      status: "completed",
+      processedSkus: result.processedRows,
+      excelFileUrl: result.outputFileUrl,
+      excelFileKey: result.outputFileKey,
+      completedAt: new Date(),
+    });
+    
+    console.log(`[Excel Order ${orderId}] Processing complete: ${result.processedRows}/${result.totalRows} rows processed`);
+  } catch (err) {
+    console.error(`[Excel Order ${orderId}] Processing failed:`, err);
+    
+    // Mark order as failed
+    await updateOrder(orderId, {
+      status: "failed",
+      completedAt: new Date(),
+    }).catch(console.error);
+  }
+}
 
 export const appRouter = router({
   system: systemRouter,
@@ -495,6 +524,138 @@ export const appRouter = router({
         notes: s.notes,
       }));
     }),
+
+    // Parse Excel file for quote
+    parseExcel: protectedProcedure
+      .input(z.object({ 
+        fileBase64: z.string(),
+        fileName: z.string(),
+      }))
+      .mutation(async ({ input }) => {
+        const XLSX = await import('xlsx');
+        const fileBuffer = Buffer.from(input.fileBase64, 'base64');
+        
+        // Read workbook to count products
+        const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        
+        if (!worksheet || !worksheet['!ref']) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Excel file is empty or invalid' });
+        }
+        
+        // Count non-empty rows
+        const range = XLSX.utils.decode_range(worksheet['!ref']);
+        let productCount = 0;
+        const sampleProducts: string[] = [];
+        
+        for (let row = 1; row <= range.e.r && row <= 2001; row++) {
+          let hasData = false;
+          for (let col = 0; col <= Math.min(2, range.e.c); col++) {
+            const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+            const cell = worksheet[cellAddress];
+            if (cell && cell.v && String(cell.v).trim()) {
+              hasData = true;
+              if (sampleProducts.length < 5) {
+                sampleProducts.push(String(cell.v).trim());
+              }
+              break;
+            }
+          }
+          if (hasData) productCount++;
+        }
+        
+        if (productCount === 0) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'No products found in Excel file' });
+        }
+        
+        if (productCount > 2000) {
+          throw new TRPCError({ 
+            code: 'BAD_REQUEST', 
+            message: 'Excel file has too many products. Maximum 2000 products per batch.' 
+          });
+        }
+        
+        return {
+          totalProducts: productCount,
+          totalCost: productCount * SKU_PRICE,
+          fileName: input.fileName,
+          sampleProducts,
+        };
+      }),
+
+    // Create order from Excel file
+    createFromExcel: protectedProcedure
+      .input(z.object({
+        fileBase64: z.string(),
+        fileName: z.string(),
+        totalProducts: z.number(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const totalCost = input.totalProducts * SKU_PRICE;
+        const balance = await getUserBalance(ctx.user.id);
+
+        if (balance < totalCost) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Insufficient balance. Need $${totalCost.toFixed(2)}, have $${balance.toFixed(2)}`,
+          });
+        }
+
+        // Deduct from balance
+        await deductFromUserBalance(ctx.user.id, totalCost);
+
+        // Create transaction record
+        await createTransaction({
+          userId: ctx.user.id,
+          type: "charge",
+          amount: totalCost.toFixed(2),
+          status: "completed",
+          description: `Excel batch scrape - ${input.totalProducts} products from ${input.fileName}`,
+        });
+
+        // Create order
+        const orderId = await createOrder({
+          userId: ctx.user.id,
+          totalSkus: input.totalProducts,
+          status: "processing",
+          sourceType: "excel",
+          sourceFileName: input.fileName,
+        });
+
+        // Start background processing
+        processExcelOrder(orderId, Buffer.from(input.fileBase64, 'base64')).catch((err: any) => {
+          console.error(`Excel order ${orderId} processing failed:`, err);
+        });
+
+        return {
+          orderId,
+          message: `Excel order created! Processing ${input.totalProducts} products...`,
+        };
+      }),
+
+    // Get downloadable Excel file with images
+    getExcelOutput: protectedProcedure
+      .input(z.object({ orderId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        const order = await getOrderById(input.orderId);
+        if (!order || order.userId !== ctx.user.id) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
+        }
+
+        if (order.sourceType !== 'excel') {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This order is not an Excel batch order" });
+        }
+
+        if (!order.excelFileUrl) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Excel output file not ready yet" });
+        }
+
+        return {
+          fileUrl: order.excelFileUrl,
+          fileName: order.sourceFileName?.replace(/\.(xlsx|xls)$/i, '-with-images.xlsx') || 'output.xlsx',
+        };
+      }),
   }),
 
   // Admin router
