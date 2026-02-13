@@ -1,6 +1,7 @@
 // Excel Processor - Handles batch processing of Excel files with SKU image insertion
 import * as XLSX from 'xlsx';
 import { scrapeSku } from './scraperService';
+import type { QualityMode } from './hqImagePipeline';
 import { storagePut } from '../storage';
 import { nanoid } from 'nanoid';
 import sharp from 'sharp';
@@ -248,8 +249,8 @@ export async function processExcelWithImages(
     try {
       console.log(`[Excel] Processing ${i + 1}/${totalRows}: ${product.identifier} (${product.type})`);
       
-      // Scrape images for this SKU/product
-      const result = await scrapeSku(product.identifier, orderId);
+      // Scrape images for this SKU/product (compressed mode for Excel embedding)
+      const result = await scrapeSku(product.identifier, orderId, 'compressed');
       
       if (result.images.length > 0) {
         // Get the first (best) image
@@ -423,8 +424,8 @@ export async function processExcelWithImagesExcelJS(
     try {
       console.log(`[Excel/ExcelJS] Processing ${i + 1}/${totalRows}: ${product.identifier}`);
       
-      // Scrape images for this SKU/product
-      const result = await scrapeSku(product.identifier, orderId);
+      // Scrape images for this SKU/product (compressed mode for Excel embedding)
+      const result = await scrapeSku(product.identifier, orderId, 'compressed');
       
       if (result.images.length > 0) {
         const bestImage = result.images[0];

@@ -761,7 +761,7 @@ async function retryDbOp<T>(op: () => Promise<T>, label: string, retries = 3): P
 }
 
 // Background job processor with robust error handling
-async function processScrapeJob(orderId: number, skus: string[]) {
+async function processScrapeJob(orderId: number, skus: string[], qualityMode: 'studio' | 'compressed' = 'studio') {
   // Dynamic timeout: 90s per SKU + 2 min buffer for zip creation/upload
   // Minimum 5 min, so even 1-SKU jobs have breathing room
   const JOB_HARD_TIMEOUT = Math.max(5 * 60 * 1000, skus.length * 90 * 1000 + 2 * 60 * 1000);
@@ -802,7 +802,7 @@ async function processScrapeJob(orderId: number, skus: string[]) {
     const result = await runScrapeJob(orderId, skus, (processed, total) => {
       console.log(`Order ${orderId}: Processed ${processed}/${total} SKUs`);
       updateOrder(orderId, { processedSkus: processed }).catch(console.error);
-    });
+    }, qualityMode);
     
     // Mark job as completed so hard timeout won't interfere
     jobCompleted = true;

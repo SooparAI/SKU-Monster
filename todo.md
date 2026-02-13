@@ -437,3 +437,27 @@
 - [x] Normalize all scraped images to uniform dimensions (square 1000x1000 with white background padding)
 - [x] Add lightweight watermark detection to filter out watermarked images (pixel heuristics, no AI)
 - [x] Keep total cost per SKU under $0.05 (no expensive AI image checks)
+- [ ] Redesign image pipeline: stop AI image generation, prioritize real scraped photos
+- [ ] Add background removal (rembg/Replicate) + white background compositing
+- [ ] Increase output quality to 1-3MB per image (high-quality PNG)
+- [ ] Filter out images with garbled/hallucinated text
+- [ ] Remove reflections from product images
+- [ ] Deliver exactly 3 studio-quality images per SKU
+- [ ] Add CSV upload quality mode toggle (studio vs compressed)
+- [ ] Keep total cost under $0.05 per SKU
+
+
+## Pipeline Redesign: Quality Mode & No AI Generation (Feb 13, 2026)
+- [x] Add qualityMode parameter ('studio' | 'compressed') to processImagesHQ
+- [x] Thread qualityMode through: scrapeSku → runScrapeJob → processScrapeJob → tRPC router
+- [x] Add processCompressedImage function (1000x1000 JPEG, no bg removal, no upscaling, $0 cost)
+- [x] Change studio output from JPEG to PNG for larger file sizes (1-3MB target)
+- [x] Remove ai_generated source type from ProcessedImage interface
+- [x] Excel batch processing automatically uses compressed mode
+- [x] Regular SKU scraping defaults to studio mode (2000x2000 PNG with bg removal)
+- [x] Add background removal via Replicate rembg model (~$0.003/image)
+- [x] Update frontend Home page with 3 tabs: Text Input, File Upload, Excel Batch
+- [x] Add quality mode info badges to each tab (studio vs compressed)
+- [x] Wire Excel Batch tab to createFromExcel/parseExcel tRPC endpoints
+- [x] Add quality mode test suite (7 tests)
+- [x] All 51 tests passing, 0 TypeScript errors

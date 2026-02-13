@@ -11,7 +11,7 @@ import { promisify } from "util";
 
 import { storagePut } from "../storage";
 import { storeConfigs, getActiveStores, type StoreConfig } from "./storeConfigs";
-import { processImagesHQ, uploadHQImages } from "./hqImagePipeline";
+import { processImagesHQ, uploadHQImages, type QualityMode } from "./hqImagePipeline";
 import { lookupUpc, lookupBarcodeLookup, lookupEanSearch, extractProductKeywords } from "./upcLookup";
 import { searchProductImages, searchEbayImages, searchRetailerImages, searchAllImageSources } from "./imageSearch";
 import { createStepLogger, addScrapeLog } from "../db";
@@ -308,7 +308,7 @@ function getTopStores(): StoreConfig[] {
 }
 
 // ===== MAIN SCRAPE FUNCTION =====
-export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrapeResult> {
+export async function scrapeSku(sku: string, orderId?: number, qualityMode: QualityMode = 'studio'): Promise<SkuScrapeResult> {
   const startTime = Date.now();
   const allImages: ScrapedImageResult[] = [];
   const errors: string[] = [];
@@ -494,7 +494,7 @@ export async function scrapeSku(sku: string, orderId?: number): Promise<SkuScrap
   const imageUrls = uniqueImages.map(img => img.imageUrl);
   let hqResult;
   try {
-    hqResult = await processImagesHQ(sku, imageUrls, productName, brand);
+    hqResult = await processImagesHQ(sku, imageUrls, productName, brand, qualityMode);
     console.log(`[${sku}] HQ pipeline: ${hqResult.images.length} images, cost: $${hqResult.totalCost.toFixed(4)}`);
     await log?.log('hq_pipeline', 'success', `${hqResult.images.length} HQ images, cost: $${hqResult.totalCost.toFixed(4)}`, {
       imageCount: hqResult.images.length,
@@ -622,7 +622,8 @@ async function createZipFromResults(
 export async function runScrapeJob(
   orderId: number,
   skus: string[],
-  onProgress?: (processed: number, total: number) => void
+  onProgress?: (processed: number, total: number) => void,
+  qualityMode: QualityMode = 'studio'
 ): Promise<ScrapeJobResult> {
   const results: SkuScrapeResult[] = [];
   let totalImages = 0;
@@ -644,7 +645,7 @@ export async function runScrapeJob(
 
       try {
         const result = await withTimeout(
-          scrapeSku(sku, orderId),
+          scrapeSku(sku, orderId, qualityMode),
           SKU_TIMEOUT_MS,
           `Scrape SKU ${sku}`
         );

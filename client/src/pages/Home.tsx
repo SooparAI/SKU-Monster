@@ -17,8 +17,10 @@ import {
   Package,
   DollarSign,
   AlertCircle,
+  ImageIcon,
+  Sparkles,
+  Info,
 } from "lucide-react";
-import * as XLSX from "xlsx";
 
 export default function Home() {
   const { user } = useAuth();
@@ -27,6 +29,17 @@ export default function Home() {
   const [parsedSkus, setParsedSkus] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Excel batch state
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelParsed, setExcelParsed] = useState<{
+    totalProducts: number;
+    totalCost: number;
+    fileName: string;
+    sampleProducts: string[];
+  } | null>(null);
+  const [isExcelProcessing, setIsExcelProcessing] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
 
   const { data: balanceData, refetch: refetchBalance } = trpc.balance.get.useQuery(undefined, {
     enabled: !!user,
@@ -57,6 +70,28 @@ export default function Home() {
     },
   });
 
+  // Excel mutations
+  const parseExcelMutation = trpc.stores.parseExcel.useMutation({
+    onSuccess: (data) => {
+      setExcelParsed(data);
+      toast.success(`Found ${data.totalProducts} products in ${data.fileName}`);
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
+  const createFromExcelMutation = trpc.stores.createFromExcel.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message);
+      refetchBalance();
+      setLocation(`/orders/${data.orderId}`);
+    },
+    onError: (error) => {
+      toast.error(error.message);
+    },
+  });
+
   const handleParseSkus = () => {
     if (!skuInput.trim()) {
       toast.error("Please enter at least one SKU");
@@ -70,6 +105,7 @@ export default function Home() {
     if (!file) return;
 
     try {
+      const XLSX = await import("xlsx");
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -86,6 +122,55 @@ export default function Home() {
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
+    }
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setExcelFile(file);
+    setExcelParsed(null);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+
+      parseExcelMutation.mutate({
+        fileBase64: base64,
+        fileName: file.name,
+      });
+    } catch (error) {
+      toast.error("Failed to read Excel file.");
+      setExcelFile(null);
+    }
+  };
+
+  const handleExcelSubmit = async () => {
+    if (!excelFile || !excelParsed) return;
+
+    setIsExcelProcessing(true);
+    try {
+      const arrayBuffer = await excelFile.arrayBuffer();
+      const base64 = btoa(
+        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+      );
+
+      createFromExcelMutation.mutate(
+        {
+          fileBase64: base64,
+          fileName: excelFile.name,
+          totalProducts: excelParsed.totalProducts,
+        },
+        {
+          onSettled: () => setIsExcelProcessing(false),
+        }
+      );
+    } catch (error) {
+      toast.error("Failed to process Excel file.");
+      setIsExcelProcessing(false);
     }
   };
 
@@ -173,9 +258,10 @@ export default function Home() {
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs defaultValue="text" className="w-full">
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="text">Text Input</TabsTrigger>
               <TabsTrigger value="file">File Upload</TabsTrigger>
+              <TabsTrigger value="batch">Excel Batch</TabsTrigger>
             </TabsList>
 
             <TabsContent value="text" className="space-y-4">
@@ -189,6 +275,15 @@ export default function Home() {
                   onChange={(e) => setSkuInput(e.target.value)}
                 />
               </div>
+
+              {/* Quality info badge */}
+              <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <Sparkles className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-emerald-800">
+                  <span className="font-semibold">Studio Quality:</span> Each SKU produces 3 high-resolution images (2000×2000 PNG, 1-3MB each) with white background and no watermarks.
+                </div>
+              </div>
+
               <Button
                 onClick={handleParseSkus}
                 disabled={parseSkusMutation.isPending || !skuInput.trim()}
@@ -223,11 +318,136 @@ export default function Home() {
                   <div>
                     <p className="font-medium text-foreground">Click to upload CSV or Excel file</p>
                     <p className="text-sm text-muted-foreground mt-0.5">
-                      Supports .csv, .xlsx, and .xls files
+                      Extracts SKU codes and processes as studio quality images
                     </p>
                   </div>
                 </label>
               </div>
+
+              {/* Quality info badge */}
+              <div className="flex items-start gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                <Sparkles className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-emerald-800">
+                  <span className="font-semibold">Studio Quality:</span> Same as text input — 3 high-res images per SKU, delivered as a downloadable ZIP.
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="batch" className="space-y-4">
+              <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/30 transition-colors">
+                <input
+                  ref={excelInputRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleExcelUpload}
+                  className="hidden"
+                  id="excel-upload"
+                />
+                <label
+                  htmlFor="excel-upload"
+                  className="cursor-pointer flex flex-col items-center gap-3"
+                >
+                  <div className="p-3 rounded-full bg-muted">
+                    <FileSpreadsheet className="h-7 w-7 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-foreground">Upload Excel file for batch processing</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      Returns your Excel file with product images embedded (.xlsx only)
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Quality info badge for batch */}
+              <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <ImageIcon className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                <div className="text-xs text-blue-800">
+                  <span className="font-semibold">Compressed Mode:</span> Images are resized to 1000×1000 JPEG for Excel embedding. Faster processing, smaller file size. For full studio quality, use Text Input or File Upload mode.
+                </div>
+              </div>
+
+              {parseExcelMutation.isPending && (
+                <div className="flex items-center justify-center gap-2 py-4">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                  <span className="text-sm text-muted-foreground">Analyzing Excel file...</span>
+                </div>
+              )}
+
+              {excelParsed && (
+                <Card className="border-primary/20">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="h-4 w-4 text-primary" />
+                      <span className="font-medium text-foreground">{excelParsed.fileName}</span>
+                    </div>
+
+                    <div className="bg-muted/30 rounded-lg p-3 space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Products found</span>
+                        <span className="text-foreground font-medium">{excelParsed.totalProducts}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Price per product</span>
+                        <span className="text-foreground">${pricePerSku.toFixed(2)}</span>
+                      </div>
+                      <div className="border-t border-border pt-2 flex justify-between font-medium">
+                        <span className="text-foreground">Total Cost</span>
+                        <span className="text-primary">${excelParsed.totalCost.toFixed(2)}</span>
+                      </div>
+                    </div>
+
+                    {excelParsed.sampleProducts.length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-1.5">Sample products:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {excelParsed.sampleProducts.map((p, i) => (
+                            <span
+                              key={i}
+                              className="bg-muted px-2 py-1 rounded text-xs font-mono text-foreground"
+                            >
+                              {p}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {balance < excelParsed.totalCost && (
+                      <div className="flex items-center gap-2 text-destructive text-sm">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>
+                          Insufficient balance. Need ${excelParsed.totalCost.toFixed(2)}, have ${balance.toFixed(2)}.
+                        </span>
+                      </div>
+                    )}
+
+                    <Button
+                      onClick={handleExcelSubmit}
+                      disabled={isExcelProcessing || balance < excelParsed.totalCost}
+                      className="w-full"
+                      size="lg"
+                    >
+                      {isExcelProcessing ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Processing...
+                        </>
+                      ) : balance < excelParsed.totalCost ? (
+                        <>
+                          <DollarSign className="h-4 w-4 mr-2" />
+                          Top Up Required
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-4 w-4 mr-2" />
+                          Process {excelParsed.totalProducts} Products
+                        </>
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
             </TabsContent>
           </Tabs>
         </CardContent>
@@ -269,6 +489,10 @@ export default function Home() {
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Price per SKU</span>
                 <span className="text-foreground">${pricePerSku.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Output quality</span>
+                <span className="text-emerald-600 font-medium">Studio (2000×2000 PNG)</span>
               </div>
               <div className="border-t border-border pt-2 flex justify-between font-medium">
                 <span className="text-foreground">Total Cost</span>
