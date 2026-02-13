@@ -5,16 +5,16 @@
  * 1. Pre-filter scraped URLs by pattern (FREE, instant)
  * 2. Score images in PARALLEL — picks the best real product photos
  * 3. Watermark detection — penalize/skip watermarked images
- * 4. Background removal via Replicate (~$0.003/image) — clean white bg
- * 5. AI upscale via Real-ESRGAN (~$0.002/image) — crisp 2000x2000+
- * 6. Final compositing: product centered on pure white, uniform size
+ * 4. AI upscale via Real-ESRGAN (~$0.002/image) — crisp 2000x2000+
+ * 5. Final compositing: product centered on pure white, uniform size
  * 
  * Key principles:
  * - NEVER use AI to generate product images (text on labels gets garbled)
  * - Real product photos from retailers are the ONLY source
- * - Background removal + white bg compositing = studio quality
+ * - NO background removal (rembg causes edge artifacts on product images)
+ * - Upscale + white pad = clean studio quality
  * - Target: 3 images, each 2000x2000, 1-3MB, pure white background
- * - Cost budget: ~$0.005/image × 3 = $0.015/SKU (well under $0.05)
+ * - Cost budget: ~$0.002/image × 3 = $0.006/SKU (well under $0.05)
  */
 
 import { storagePut } from '../storage';
@@ -45,11 +45,11 @@ const REPLICATE_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
 // Models
 const REAL_ESRGAN_MODEL = 'nightmareai/real-esrgan:f121d640bd286e1fdc67f9799164c1d5be36ff74576ee11c803ae5b665dd46aa';
-const REMBG_MODEL = 'cjwbw/rembg:fb8af171cfa1616ddcf1242c093f9c46bcada5ad4cf6f2fbe8b81b330ec5c003';
+// REMBG removed — causes edge artifacts on product images
 
 // Output dimensions
 const STUDIO_SIZE = 2000; // 2000x2000 studio output
-const STUDIO_BG = { r: 255, g: 255, b: 255, alpha: 1 }; // Pure white
+// STUDIO_BG removed — studioComposite no longer used
 
 export interface ProcessedImage {
   originalUrl: string;
@@ -241,65 +241,8 @@ async function scoreImage(imageUrl: string): Promise<{
 
 // ===== REPLICATE HELPERS =====
 
-/**
- * Remove background using Replicate rembg (~$0.004/image)
- * Returns a PNG buffer with transparent background
- */
-async function removeBackground(imageUrl: string): Promise<Buffer | null> {
-  if (!REPLICATE_TOKEN) {
-    console.warn('[BG Remove] REPLICATE_API_TOKEN not set');
-    return null;
-  }
-
-  const MAX_RETRIES = 2;
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const replicate = new Replicate({ auth: REPLICATE_TOKEN });
-      console.log(`[BG Remove] Removing background (attempt ${attempt})...`);
-      const start = Date.now();
-
-      const output = await replicate.run(REMBG_MODEL, {
-        input: { image: imageUrl },
-      });
-
-      let buffer: Buffer;
-      if (output instanceof ReadableStream || (output && typeof (output as any).getReader === 'function')) {
-        const reader = (output as ReadableStream).getReader();
-        const chunks: Uint8Array[] = [];
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-        }
-        buffer = Buffer.concat(chunks);
-      } else if (typeof output === 'string') {
-        const resp = await fetch(output, { signal: AbortSignal.timeout(30000) });
-        buffer = Buffer.from(await resp.arrayBuffer());
-      } else {
-        console.error('[BG Remove] Unexpected output type:', typeof output);
-        return null;
-      }
-
-      const elapsed = Date.now() - start;
-      console.log(`[BG Remove] Done in ${elapsed}ms, output: ${(buffer.length / 1024).toFixed(1)}KB`);
-      return buffer;
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (errMsg.includes('429') && attempt < MAX_RETRIES) {
-        console.warn(`[BG Remove] Rate limited, waiting 15s...`);
-        await new Promise(r => setTimeout(r, 15000));
-        continue;
-      }
-      console.error(`[BG Remove] Failed (attempt ${attempt}): ${errMsg}`);
-      if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, 3000));
-        continue;
-      }
-      return null;
-    }
-  }
-  return null;
-}
+// removeBackground() REMOVED — rembg causes edge artifacts on product images
+// Most retailer images already have white/light backgrounds
 
 /**
  * AI upscale using Replicate Real-ESRGAN (~$0.002/image)
@@ -370,68 +313,7 @@ async function aiUpscale(imageUrl: string, scale: number = 4): Promise<Buffer | 
   return null;
 }
 
-// ===== STUDIO COMPOSITING =====
-
-/**
- * Composite a transparent-background image onto a white canvas at studio dimensions.
- * Product is centered with margin, output is high-quality JPEG (1-3MB).
- */
-async function studioComposite(
-  transparentBuffer: Buffer,
-  targetSize: number = STUDIO_SIZE
-): Promise<{ buffer: Buffer; width: number; height: number } | null> {
-  const sharp = await getSharp();
-  if (!sharp) return null;
-
-  try {
-    const metadata = await sharp(transparentBuffer).metadata();
-    const origW = metadata.width || 0;
-    const origH = metadata.height || 0;
-
-    if (origW === 0 || origH === 0) return null;
-
-    // Product should fill ~80% of the canvas (10% margin each side)
-    const maxFit = Math.floor(targetSize * 0.80);
-    const scale = Math.min(maxFit / origW, maxFit / origH);
-
-    let fitW = Math.round(origW * scale);
-    let fitH = Math.round(origH * scale);
-
-    // Ensure minimum size
-    if (fitW < 100) fitW = 100;
-    if (fitH < 100) fitH = 100;
-
-    // Resize the transparent product image
-    const resized = await sharp(transparentBuffer)
-      .resize(fitW, fitH, {
-        fit: 'inside',
-        withoutEnlargement: false,
-        kernel: 'lanczos3',
-      })
-      .png()
-      .toBuffer();
-
-    // Create white canvas and composite the product centered
-    const composited = await sharp({
-      create: {
-        width: targetSize,
-        height: targetSize,
-        channels: 4,
-        background: STUDIO_BG,
-      },
-    })
-      .composite([{ input: resized, gravity: 'centre' }])
-      .flatten({ background: STUDIO_BG }) // Flatten transparency to white
-      .png({ compressionLevel: 3 }) // PNG for studio quality — 1-3MB output
-      .toBuffer();
-
-    console.log(`[Studio] ${origW}x${origH} → ${targetSize}x${targetSize} (product: ${fitW}x${fitH}, ${(composited.length / 1024).toFixed(0)}KB)`);
-    return { buffer: composited, width: targetSize, height: targetSize };
-  } catch (err) {
-    console.error(`[Studio] Compositing error: ${err}`);
-    return null;
-  }
-}
+// studioComposite() REMOVED — no longer needed without background removal
 
 /**
  * Fallback: just resize and pad on white without background removal.
@@ -549,9 +431,11 @@ async function processCompressedImage(
 /**
  * Process a single image through the studio pipeline:
  * 1. Upload original to S3 (temp)
- * 2. Remove background via Replicate rembg
- * 3. Upscale if needed via Real-ESRGAN
- * 4. Composite on white background at studio dimensions
+ * 2. Upscale if needed via Real-ESRGAN
+ * 3. Pad on white background at studio dimensions (2000x2000)
+ * 
+ * NO background removal — rembg causes edge artifacts on product images.
+ * Most retailer images already have white/light backgrounds.
  */
 async function processStudioImage(
   sku: string,
@@ -564,10 +448,7 @@ async function processStudioImage(
   try {
     let cost = 0;
 
-    // Step 1: Upload original to S3 so Replicate can access it
-    const tempKey = `scrapes/temp_${sku}_${nanoid(8)}.png`;
-    
-    // Convert to PNG for best quality through the pipeline
+    // Step 1: Convert to PNG for best quality through the pipeline
     const sharp = await getSharp();
     let pngBuffer = buffer;
     if (sharp) {
@@ -575,33 +456,15 @@ async function processStudioImage(
         pngBuffer = await sharp(buffer).png().toBuffer();
       } catch { /* use original */ }
     }
-    
-    const { url: tempS3Url } = await storagePut(tempKey, pngBuffer, 'image/png');
 
-    // Step 2: Remove background
-    let processedBuffer: Buffer;
-    let bgRemoved = false;
-    
-    const noBgBuffer = await removeBackground(tempS3Url);
-    if (noBgBuffer && noBgBuffer.length > 1000) {
-      processedBuffer = noBgBuffer;
-      bgRemoved = true;
-      cost += 0.004; // rembg cost
-      console.log(`[Studio] Background removed for image ${index}`);
-    } else {
-      // Fallback: use original (might already have white bg)
-      processedBuffer = pngBuffer;
-      console.log(`[Studio] BG removal failed for image ${index}, using original`);
-    }
-
-    // Step 3: Check if upscaling is needed
-    let upscaleBuffer = processedBuffer;
+    // Step 2: Check if upscaling is needed
+    let upscaleBuffer = pngBuffer;
     let currentW = width;
     let currentH = height;
 
     if (sharp) {
       try {
-        const meta = await sharp(processedBuffer).metadata();
+        const meta = await sharp(pngBuffer).metadata();
         currentW = meta.width || width;
         currentH = meta.height || height;
       } catch { /* use original dims */ }
@@ -609,12 +472,12 @@ async function processStudioImage(
 
     const scaleFactor = getUpscaleFactor(currentW, currentH);
     if (scaleFactor > 0) {
-      // Upload processed image to S3 for upscaling
+      // Upload to S3 so Replicate can access it
       const upscaleKey = `scrapes/temp_upscale_${nanoid(8)}.png`;
-      const { url: upscaleUrl } = await storagePut(upscaleKey, processedBuffer, 'image/png');
+      const { url: upscaleUrl } = await storagePut(upscaleKey, pngBuffer, 'image/png');
 
       const upscaled = await aiUpscale(upscaleUrl, scaleFactor);
-      if (upscaled && upscaled.length > processedBuffer.length) {
+      if (upscaled && upscaled.length > pngBuffer.length) {
         upscaleBuffer = upscaled;
         cost += 0.002; // Real-ESRGAN cost
         
@@ -629,25 +492,19 @@ async function processStudioImage(
       } else {
         console.log(`[Studio] Upscale failed, using ${currentW}x${currentH}`);
       }
+    } else {
+      console.log(`[Studio] No upscale needed (${currentW}x${currentH} already large)`);
     }
 
-    // Step 4: Studio compositing — center on white background at 2000x2000
-    let finalResult;
-    if (bgRemoved) {
-      finalResult = await studioComposite(upscaleBuffer, STUDIO_SIZE);
-    }
-    
-    if (!finalResult) {
-      // Fallback: simple white pad without bg removal
-      finalResult = await simpleWhitePad(upscaleBuffer, STUDIO_SIZE);
-    }
+    // Step 3: White pad — center on white background at 2000x2000
+    const finalResult = await simpleWhitePad(upscaleBuffer, STUDIO_SIZE);
 
     if (!finalResult) {
-      console.error(`[Studio] All compositing failed for image ${index}`);
+      console.error(`[Studio] White pad failed for image ${index}`);
       return null;
     }
 
-    // Step 5: Upload final studio image to S3
+    // Step 4: Upload final studio image to S3
     const s3Key = `scrapes/${sku}/STUDIO_${source}_${index}_${STUDIO_SIZE}x${STUDIO_SIZE}_${nanoid(6)}.png`;
     const { url: s3Url } = await storagePut(s3Key, finalResult.buffer, 'image/png');
     const sizeKB = finalResult.buffer.length / 1024;

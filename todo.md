@@ -461,3 +461,11 @@
 - [x] Wire Excel Batch tab to createFromExcel/parseExcel tRPC endpoints
 - [x] Add quality mode test suite (7 tests)
 - [x] All 51 tests passing, 0 TypeScript errors
+
+
+## Bug Fix: Remove rembg Background Removal (Feb 13, 2026)
+- [x] Remove rembg background removal from processImagesHQ — causes edge artifacts on product images
+- [x] Keep only Real-ESRGAN upscaling for studio mode
+- [x] Output upscaled images as-is (most retailer images already have white backgrounds)
+- [x] Remove dead code: removeBackground(), studioComposite(), REMBG_MODEL, STUDIO_BG
+- [x] Test and verify pipeline still works (0 TypeScript errors, 49/51 tests pass — 2 network timeouts)
