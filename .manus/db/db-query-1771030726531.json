@@ -1,0 +1,28 @@
+{
+  "query": "\n-- Find the user\nSELECT id, email, name, balance FROM users WHERE email = 'sooryarp@gmail.com';\n\n-- Add $100 to the balance\nUPDATE users \nSET balance = balance + 100 \nWHERE email = 'sooryarp@gmail.com';\n\n-- Verify the new balance\nSELECT id, email, name, balance FROM users WHERE email = 'sooryarp@gmail.com';\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute \n-- Find the user\nSELECT id, email, name, balance FROM users WHERE email = 'sooryarp@gmail.com';\n\n-- Add $100 to the balance\nUPDATE users \nSET balance = balance + 100 \nWHERE email = 'sooryarp@gmail.com';\n\n-- Verify the new balance\nSELECT id, email, name, balance FROM users WHERE email = 'sooryarp@gmail.com';\n",
+  "rows": [
+    {
+      "id": "1",
+      "email": "sooryarp@gmail.com",
+      "name": "NULL",
+      "balance": "88.00"
+    },
+    {
+      "id": "id",
+      "email": "email",
+      "name": "name",
+      "balance": "balance"
+    },
+    {
+      "id": "1",
+      "email": "sooryarp@gmail.com",
+      "name": "NULL",
+      "balance": "188.00"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\temail\tname\tbalance\n1\tsooryarp@gmail.com\tNULL\t88.00\nid\temail\tname\tbalance\n1\tsooryarp@gmail.com\tNULL\t188.00\n",
+  "stderr": "",
+  "execution_time_ms": 85
+}

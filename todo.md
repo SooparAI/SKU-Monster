@@ -485,3 +485,16 @@
 - [x] Skip upscaling for images already ≥1500px to preserve text quality and avoid AI artifacts
 - [x] Prioritize original high-res retailer images over upscaled versions (getUpscaleFactor updated)
 - [x] Test and verify: 0 TypeScript errors, 49/51 tests pass (2 network timeouts)
+
+
+## Logo & Duplicate Image Filtering Fix (Feb 13, 2026)
+- [x] Strengthen URL pattern filtering to catch retailer logos (added 'paris.com', 'banner', 'site-logo')
+- [x] Add image aspect ratio check to reject wide/square logos (penalize >2.5 ratio and small squares)
+- [x] Tighten duplicate detection from 20% to 5% similarity threshold
+- [ ] Test with real SKUs to verify no logos in output
+
+## Prioritize Native High-Res Images (Feb 13, 2026)
+- [x] Boost scoring for images already ≥1500px (+60 points for ≥1500px, +80 for ≥2000px)
+- [x] Skip upscaling entirely if we have 5+ images ≥1500px (skipUpscaling flag)
+- [x] Prioritize native high-res over upscaled to preserve text quality (manufacturer-perfect 1:1)
+- [ ] Test with real SKUs to verify text remains sharp and no logos

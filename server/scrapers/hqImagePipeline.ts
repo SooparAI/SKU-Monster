@@ -74,21 +74,32 @@ export interface HQPipelineResult {
 // ===== URL FILTERING =====
 
 const NON_PRODUCT_PATTERNS = [
-  'logo', 'icon', 'sprite', 'button', 'arrow', 'chevron',
-  'close', 'search', 'menu', 'header', 'footer',
-  'thumb', 'thumbnail', '_xs', '_sm', '_tiny',
-  '50x50', '100x100', '150x150',
-  'placeholder', 'loading', 'blank', 'empty',
+  // Logos and branding
+  'logo', 'icon', 'sprite', 'brand', 'branding', 'watermark',
+  // UI elements
+  'button', 'arrow', 'chevron', 'close', 'search', 'menu', 'header', 'footer', 'nav',
+  // Thumbnails and small images
+  'thumb', 'thumbnail', '_xs', '_sm', '_tiny', '_small',
+  '50x50', '100x100', '150x150', '200x200', '250x250',
+  // Placeholder images
+  'placeholder', 'loading', 'blank', 'empty', 'default',
   'no-image', 'coming-soon', 'out-of-stock', 'sold-out',
+  // Payment and trust badges
   'payment', 'visa', 'mastercard', 'paypal', 'amex', 'klarna', 'tabby',
-  'trust', 'certificate', 'badge', 'verified',
-  'facebook', 'twitter', 'instagram', 'tiktok', 'youtube', 'pinterest',
-  'pixel', 'tracking', '1x1', 'spacer', 'beacon',
-  'shipping', 'delivery', 'guarantee',
-  'avatar', 'promo', 'ad-', 'advertisement',
-  'cart', 'checkout',
+  'trust', 'certificate', 'badge', 'verified', 'secure', 'ssl',
+  // Social media
+  'facebook', 'twitter', 'instagram', 'tiktok', 'youtube', 'pinterest', 'whatsapp',
+  // Tracking pixels
+  'pixel', 'tracking', '1x1', 'spacer', 'beacon', 'analytics',
+  // Marketing elements
+  'shipping', 'delivery', 'guarantee', 'free-shipping', 'fast-delivery',
+  'avatar', 'promo', 'ad-', 'advertisement', 'banner', 'hero',
+  'cart', 'checkout', 'wishlist',
+  // Recommendation widgets
   'similar', 'recommend', 'related', 'also-like', 'you-may',
-  'recently-viewed', 'cross-sell', 'upsell',
+  'recently-viewed', 'cross-sell', 'upsell', 'trending',
+  // Retailer-specific patterns
+  'paris.com', 'pariscom', 'site-logo', 'store-logo', 'shop-logo',
 ];
 
 const PRODUCT_PATTERNS = [
@@ -179,16 +190,31 @@ async function scoreImage(imageUrl: string): Promise<{
       else if (sizeKB >= 200) score += 30;
       else if (sizeKB >= 50) score += 15;
 
-      // Dimension scoring — heavily favor large images
+      // Dimension scoring — HEAVILY favor native high-res images (no upscaling needed = perfect text)
       if (width > 0 && height > 0) {
         if (width < 200 || height < 200) score -= 40;
-        else if (width >= 1500 && height >= 1500) score += 40;
-        else if (width >= 800 && height >= 800) score += 30;
-        else if (width >= 500 && height >= 500) score += 15;
+        // Native high-res (≥1500px) = manufacturer-perfect quality, no AI artifacts
+        else if (width >= 2000 && height >= 2000) score += 80; // Ideal native resolution
+        else if (width >= 1500 && height >= 1500) score += 60; // Great native resolution
+        else if (width >= 1000 && height >= 1000) score += 30; // Good, may need upscale
+        else if (width >= 800 && height >= 800) score += 20;
+        else if (width >= 500 && height >= 500) score += 10;
 
         const aspectRatio = width / height;
-        if (aspectRatio >= 0.6 && aspectRatio <= 1.2) score += 20; // Square-ish ideal
-        else if (aspectRatio > 2.5 || aspectRatio < 0.4) score -= 30;
+        
+        // Reject logos: extremely wide (>2.5) or extremely square (0.9-1.1 AND small)
+        // Product bottles are typically tall/vertical (0.5-0.8 aspect ratio)
+        if (aspectRatio > 2.5) {
+          score -= 60; // Very wide = likely banner/logo
+        } else if (aspectRatio >= 0.9 && aspectRatio <= 1.1 && width < 600) {
+          score -= 50; // Small square = likely logo/icon
+        } else if (aspectRatio >= 0.6 && aspectRatio <= 0.85) {
+          score += 25; // Tall/vertical = ideal for bottles
+        } else if (aspectRatio >= 0.85 && aspectRatio <= 1.2) {
+          score += 10; // Slightly square-ish OK for some products
+        } else if (aspectRatio < 0.4) {
+          score -= 30; // Too tall/narrow
+        }
       } else {
         if (sizeKB >= 30) score += 10;
       }
@@ -445,7 +471,8 @@ async function processStudioImage(
   width: number,
   height: number,
   index: number,
-  source: string
+  source: string,
+  skipUpscaling: boolean = false
 ): Promise<{ s3Url: string; s3Key: string; width: number; height: number; sizeKB: number; cost: number } | null> {
   try {
     let cost = 0;
@@ -472,8 +499,8 @@ async function processStudioImage(
       } catch { /* use original dims */ }
     }
 
-    const scaleFactor = getUpscaleFactor(currentW, currentH);
-    if (scaleFactor > 0) {
+    const scaleFactor = skipUpscaling ? 0 : getUpscaleFactor(currentW, currentH);
+    if (scaleFactor > 0 && !skipUpscaling) {
       // Upload to S3 so Replicate can access it
       const upscaleKey = `scrapes/temp_upscale_${nanoid(8)}.png`;
       const { url: upscaleUrl } = await storagePut(upscaleKey, pngBuffer, 'image/png');
@@ -588,20 +615,22 @@ export async function processImagesHQ(
       .sort((a, b) => b.sizeKB - a.sizeKB);
   }
 
-  // Deduplicate by similar dimensions
+  // Deduplicate by similar dimensions — tightened to 5% threshold to prevent near-identical images
   const deduped: typeof scoredImages = [];
   for (const img of scoredImages) {
     const isDupe = deduped.some(existing => {
       if (img.width > 0 && existing.width > 0) {
         const wRatio = img.width / existing.width;
         const hRatio = img.height / existing.height;
-        return Math.abs(wRatio - hRatio) < 0.1 && wRatio > 0.8 && wRatio < 1.2;
+        // Tightened from 20% to 5% similarity — images must be nearly identical to be considered dupes
+        return Math.abs(wRatio - hRatio) < 0.05 && wRatio > 0.95 && wRatio < 1.05;
       }
       return false;
     });
     if (!isDupe) deduped.push(img);
   }
   scoredImages = deduped.length > 0 ? deduped : scoredImages;
+  console.log(`[HQ Pipeline] Deduplication: ${scoreResults.length} → ${scoredImages.length} unique images`);
 
   for (const img of scoredImages.slice(0, 5)) {
     console.log(`[HQ Pipeline] ✓ Score ${img.score}: ${img.url.substring(0, 60)}... (${img.width}x${img.height}, ${img.sizeKB.toFixed(1)}KB)`);
@@ -613,7 +642,15 @@ export async function processImagesHQ(
     return result;
   }
 
-  // ===== STEP 3: Studio processing — top images IN PARALLEL =====
+  // ===== STEP 3: Check if we have enough native high-res images (skip upscaling) =====
+  const nativeHighResCount = scoredImages.filter(img => img.width >= 1500 && img.height >= 1500).length;
+  const skipUpscaling = nativeHighResCount >= TARGET_IMAGE_COUNT;
+  if (skipUpscaling) {
+    console.log(`[HQ Pipeline] ✅ Found ${nativeHighResCount} native high-res images — skipping upscaling to preserve text quality`);
+    result.processingSteps.push(`Found ${nativeHighResCount} native high-res images — no upscaling needed`);
+  }
+
+  // ===== STEP 4: Studio processing — top images IN PARALLEL =====
   const topImages = scoredImages.slice(0, Math.min(TARGET_IMAGE_COUNT + 1, scoredImages.length)); // Take 1 extra in case one fails
   const studioStart = Date.now();
   result.processingSteps.push(`${qualityMode === 'studio' ? 'Studio' : 'Compressed'} processing ${topImages.length} images...`);
@@ -622,7 +659,7 @@ export async function processImagesHQ(
     topImages.map((img, idx) =>
       qualityMode === 'compressed'
         ? processCompressedImage(sku, img.buffer!, img.width, img.height, idx + 1)
-        : processStudioImage(sku, img.buffer!, img.width, img.height, idx + 1, 'studio')
+        : processStudioImage(sku, img.buffer!, img.width, img.height, idx + 1, 'studio', skipUpscaling)
     )
   );
 
