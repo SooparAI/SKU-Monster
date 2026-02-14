@@ -498,3 +498,10 @@
 - [x] Skip upscaling entirely if we have 5+ images ≥1500px (skipUpscaling flag)
 - [x] Prioritize native high-res over upscaled to preserve text quality (manufacturer-perfect 1:1)
 - [ ] Test with real SKUs to verify text remains sharp and no logos
+
+
+## Fix "No SKUs to retry" Error (Feb 14, 2026)
+- [x] Investigate retry logic in tRPC router (orders.retry endpoint)
+- [x] Fix validation to handle edge cases (allow retrying partial orders, check completed status)
+- [x] Add better error messages to explain why retry failed (show completed count)
+- [x] 0 TypeScript errors

@@ -1,0 +1,19 @@
+{
+  "query": "\n-- Check order status\nSELECT id, userId, status, processedSkus, totalSkus, createdAt, completedAt \nFROM orders \nWHERE id = 420001;\n\n-- Check order items and their statuses\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420001;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute \n-- Check order status\nSELECT id, userId, status, processedSkus, totalSkus, createdAt, completedAt \nFROM orders \nWHERE id = 420001;\n\n-- Check order items and their statuses\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420001;\n",
+  "rows": [
+    {
+      "id": "420001",
+      "userId": "1",
+      "status": "failed",
+      "processedSkus": "0",
+      "totalSkus": "9",
+      "createdAt": "2026-02-14 03:45:18",
+      "completedAt": "2026-02-14 03:45:19"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tuserId\tstatus\tprocessedSkus\ttotalSkus\tcreatedAt\tcompletedAt\n420001\t1\tfailed\t0\t9\t2026-02-14 03:45:18\t2026-02-14 03:45:19\n",
+  "stderr": "",
+  "execution_time_ms": 91
+}

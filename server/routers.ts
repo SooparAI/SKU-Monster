@@ -472,8 +472,8 @@ export const appRouter = router({
           throw new TRPCError({ code: "NOT_FOUND", message: "Order not found" });
         }
 
-        if (order.status !== "failed" && order.status !== "processing" && order.status !== "pending") {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Only failed, stuck, or pending orders can be retried" });
+        if (order.status === "completed") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This order has already completed successfully. All SKUs were processed." });
         }
 
         // Get the order items that need to be processed
@@ -482,7 +482,11 @@ export const appRouter = router({
         const skusToProcess = pendingItems.map((item) => item.sku);
 
         if (skusToProcess.length === 0) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "No SKUs to retry" });
+          const completedCount = items.filter(item => item.status === "completed").length;
+          throw new TRPCError({ 
+            code: "BAD_REQUEST", 
+            message: `No SKUs to retry. All ${completedCount} SKUs have already been processed successfully.` 
+          });
         }
 
         // Reset order status
