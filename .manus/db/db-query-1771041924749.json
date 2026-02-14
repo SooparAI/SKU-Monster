@@ -1,0 +1,32 @@
+{
+  "query": "\n-- Get order details\nSELECT id, userId, status, processedSkus, totalSkus, zipFileUrl, createdAt, completedAt \nFROM orders \nWHERE id = 420003;\n\n-- Get order items\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420003;\n\n-- Get scraped images for this order\nSELECT id, orderItemId, sku, sourceStore, imageUrl, s3Url \nFROM scrapedImages \nWHERE orderItemId IN (SELECT id FROM orderItems WHERE orderId = 420003)\nLIMIT 10;\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute \n-- Get order details\nSELECT id, userId, status, processedSkus, totalSkus, zipFileUrl, createdAt, completedAt \nFROM orders \nWHERE id = 420003;\n\n-- Get order items\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420003;\n\n-- Get scraped images for this order\nSELECT id, orderItemId, sku, sourceStore, imageUrl, s3Url \nFROM scrapedImages \nWHERE orderItemId IN (SELECT id FROM orderItems WHERE orderId = 420003)\nLIMIT 10;\n",
+  "rows": [
+    {
+      "id": "420003",
+      "userId": "1",
+      "status": "processing",
+      "processedSkus": "3",
+      "totalSkus": "10",
+      "zipFileUrl": "NULL",
+      "createdAt": "2026-02-14 04:02:04",
+      "completedAt": "NULL"
+    }
+  ],
+  "messages": [
+    "id\torderId\tsku\tstatus\timagesFound\terrorMessage",
+    "420001\t420003\t701666410164\tpending\t0\tNULL",
+    "420002\t420003\t3770006409028\tpending\t0\tNULL",
+    "420003\t420003\t3614225621932\tpending\t0\tNULL",
+    "420004\t420003\t3614222442875\tpending\t0\tNULL",
+    "420005\t420003\t3607342250826\tpending\t0\tNULL",
+    "420006\t420003\t7340032806199\tpending\t0\tNULL",
+    "420007\t420003\t7340032806168\tpending\t0\tNULL",
+    "420008\t420003\t7340032810745\tpending\t0\tNULL",
+    "420009\t420003\t7340032833041\tpending\t0\tNULL",
+    "420010\t420003\t8411061995754\tpending\t0\tNULL"
+  ],
+  "stdout": "id\tuserId\tstatus\tprocessedSkus\ttotalSkus\tzipFileUrl\tcreatedAt\tcompletedAt\n420003\t1\tprocessing\t3\t10\tNULL\t2026-02-14 04:02:04\tNULL\nid\torderId\tsku\tstatus\timagesFound\terrorMessage\n420001\t420003\t701666410164\tpending\t0\tNULL\n420002\t420003\t3770006409028\tpending\t0\tNULL\n420003\t420003\t3614225621932\tpending\t0\tNULL\n420004\t420003\t3614222442875\tpending\t0\tNULL\n420005\t420003\t3607342250826\tpending\t0\tNULL\n420006\t420003\t7340032806199\tpending\t0\tNULL\n420007\t420003\t7340032806168\tpending\t0\tNULL\n420008\t420003\t7340032810745\tpending\t0\tNULL\n420009\t420003\t7340032833041\tpending\t0\tNULL\n420010\t420003\t8411061995754\tpending\t0\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 69
+}

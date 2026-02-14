@@ -13,7 +13,7 @@
  * - Real product photos from retailers are the ONLY source
  * - NO background removal (rembg causes edge artifacts on product images)
  * - Upscale + white pad = clean studio quality
- * * Target: 5 images, each 2000x2000, 1-3MB, pure white background
+ * * Target: 5 images, each 2000x2000 JPEG (quality 90), 1-3MB, pure white background
  * - Cost budget: ~$0.002/image × 3 = $0.006/SKU (well under $0.05)
  */
 
@@ -368,17 +368,17 @@ async function simpleWhitePad(
       .resize(fitW, fitH, { fit: 'inside', withoutEnlargement: false, kernel: 'lanczos3' })
       .toBuffer();
 
-    // Use compressionLevel 6 (balanced) to target 1-3MB file size for Amazon/eBay
+    // Use JPEG quality 90 to target 1-3MB file size for Amazon/eBay (PNG is too large)
     const padded = await sharp({
       create: {
         width: targetSize,
         height: targetSize,
-        channels: 4,
-        background: { r: 255, g: 255, b: 255, alpha: 1 },
+        channels: 3, // RGB only (no alpha for JPEG)
+        background: { r: 255, g: 255, b: 255 },
       },
     })
       .composite([{ input: resized, gravity: 'centre' }])
-      .png({ compressionLevel: 6 }) // Balanced compression = 1-3MB target
+      .jpeg({ quality: 90, chromaSubsampling: '4:4:4' }) // High quality JPEG = 1-3MB
       .toBuffer();
 
     return { buffer: padded, width: targetSize, height: targetSize };
@@ -534,8 +534,8 @@ async function processStudioImage(
     }
 
     // Step 4: Upload final studio image to S3
-    const s3Key = `scrapes/${sku}/STUDIO_${source}_${index}_${STUDIO_SIZE}x${STUDIO_SIZE}_${nanoid(6)}.png`;
-    const { url: s3Url } = await storagePut(s3Key, finalResult.buffer, 'image/png');
+    const s3Key = `scrapes/${sku}/STUDIO_${source}_${index}_${STUDIO_SIZE}x${STUDIO_SIZE}_${nanoid(6)}.jpg`;
+    const { url: s3Url } = await storagePut(s3Key, finalResult.buffer, 'image/jpeg');
     const sizeKB = finalResult.buffer.length / 1024;
 
     console.log(`[Studio] ✓ ${s3Key} (${sizeKB.toFixed(0)}KB, cost: $${cost.toFixed(4)})`);

@@ -1,0 +1,21 @@
+{
+  "query": "\n-- Get order details\nSELECT id, userId, status, processedSkus, totalSkus, zipFileUrl, createdAt, completedAt \nFROM orders \nWHERE id = 420003;\n\n-- Get order items\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420003;\n\n-- Get scraped images for this order\nSELECT id, orderItemId, imageUrl, source, resolution, fileSize \nFROM scrapedImages \nWHERE orderItemId IN (SELECT id FROM orderItems WHERE orderId = 420003);\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 46aUt1aFARuriLV.6b97c4144c50 --database a56pqoKyYpysvDLAMeyVPv --execute \n-- Get order details\nSELECT id, userId, status, processedSkus, totalSkus, zipFileUrl, createdAt, completedAt \nFROM orders \nWHERE id = 420003;\n\n-- Get order items\nSELECT id, orderId, sku, status, imagesFound, errorMessage \nFROM orderItems \nWHERE orderId = 420003;\n\n-- Get scraped images for this order\nSELECT id, orderItemId, imageUrl, source, resolution, fileSize \nFROM scrapedImages \nWHERE orderItemId IN (SELECT id FROM orderItems WHERE orderId = 420003);\n",
+  "returncode": 1,
+  "logs": [
+    "id\tuserId\tstatus\tprocessedSkus\ttotalSkus\tzipFileUrl\tcreatedAt\tcompletedAt",
+    "420003\t1\tprocessing\t3\t10\tNULL\t2026-02-14 04:02:04\tNULL",
+    "id\torderId\tsku\tstatus\timagesFound\terrorMessage",
+    "420001\t420003\t701666410164\tpending\t0\tNULL",
+    "420002\t420003\t3770006409028\tpending\t0\tNULL",
+    "420003\t420003\t3614225621932\tpending\t0\tNULL",
+    "420004\t420003\t3614222442875\tpending\t0\tNULL",
+    "420005\t420003\t3607342250826\tpending\t0\tNULL",
+    "420006\t420003\t7340032806199\tpending\t0\tNULL",
+    "420007\t420003\t7340032806168\tpending\t0\tNULL",
+    "420008\t420003\t7340032810745\tpending\t0\tNULL",
+    "420009\t420003\t7340032833041\tpending\t0\tNULL",
+    "420010\t420003\t8411061995754\tpending\t0\tNULL",
+    "ERROR 1054 (42S22) at line 13: Unknown column 'source' in 'field list'"
+  ]
+}

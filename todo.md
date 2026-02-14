@@ -505,3 +505,12 @@
 - [x] Fix validation to handle edge cases (allow retrying partial orders, check completed status)
 - [x] Add better error messages to explain why retry failed (show completed count)
 - [x] 0 TypeScript errors
+
+
+## Order #420003 Image Size Investigation (Feb 14, 2026)
+- [x] Query Order #420003 details from database (order still processing)
+- [x] Identified root cause: PNG is lossless, compressionLevel doesn't reduce file size significantly
+- [x] Switched from PNG to JPEG (quality 90, 4:4:4 chroma) for 1-3MB target
+- [x] Updated S3 upload to use .jpg extension and image/jpeg MIME type
+- [x] 0 TypeScript errors
+- [ ] Test and verify file sizes are in 1-3MB range with real order
